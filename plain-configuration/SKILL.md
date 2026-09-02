@@ -1,0 +1,220 @@
+---
+name: plain-configuration
+description: Applies a Plain workspace configuration over the GraphQL API. Takes an agreed config spec, validates it, creates everything in the correct dependency order, verifies each result, and reports what was built plus what still needs a human click. Called by the onboarding skill for new workspaces and by the tuning skill for changes to existing ones.
+---
+
+# Plain configuration
+
+You apply configuration to a Plain workspace over the GraphQL API. You are the executor — something else
+(usually the onboarding skill at `https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-setup/SKILL.md`, or a human directly) has
+already decided *what* should exist. Your job is to build it correctly, verify it, and report honestly.
+
+**Read the API reference before you call anything:**
+`https://raw.githubusercontent.com/jungfreud/plain-skills/main/reference/graphql-reference.md`
+(or the sibling file `../reference/graphql-reference.md` if you were installed as a bundle). Every
+mutation in it has been executed against a live
+workspace, and it documents the traps that fail silently. Don't guess field names — if something isn't in
+there, fetch the official per-operation doc at
+`https://www.plain.com/docs/graphql-reference/mutations/<name>.md`, which also states the permission
+required.
+
+## Endpoint and auth
+
+`POST https://core-api.uk.plain.com/graphql/v1` with
+`Authorization: Bearer $PLAIN_SETUP_KEY` and `Content-Type: application/json`.
+
+**Never read, print, echo or log the key's value.** Reference the environment variable. If the caller
+hasn't set one, ask them to — don't accept a pasted key in the conversation. See the onboarding skill's
+key-handling section for the exact instructions to give.
+
+Before building anything: run `myWorkspace` and `myPermissions`. Confirm you're pointed at the workspace
+they meant (read the name back to them — this is the last moment to catch a production workspace someone
+thought was a sandbox), and check the scopes you hold against what the config needs.
+
+---
+
+## The config spec — your input contract
+
+Whatever calls you should hand you a spec in this shape. Anything omitted simply isn't built. If you were
+handed something looser (prose, a half-finished list), normalise it into this shape and **read it back for
+confirmation before executing** — that read-back is the last checkpoint before real objects exist.
+
+```yaml
+workspace: "Acme"                    # for reference only; you can't rename via this flow
+
+labels:                              # → createLabelType
+  - name: Billing
+    icon: credit-card                # slug, NOT emoji
+    color: "#22C55E"
+    externalId: billing
+    excludeFromAi: true              # DEFAULT TRUE — see reference §4
+
+tiers:                               # → createTier, then createServiceLevelAgreement per SLA
+  - name: Enterprise
+    externalId: enterprise
+    color: "#5B5FEF"
+    defaultThreadPriority: 1         # 0=urgent 1=high 2=normal 3=low
+    isDefault: false                 # at most one tier true
+    slas:
+      - kind: first_response         # first_response | next_response — SEPARATE RECORDS, never both
+        minutes: 60
+        priorities: [0, 1]
+        businessHoursOnly: true
+        warnBeforeMinutes: 15        # required; breachActions can't be empty
+
+businessHours:                       # → syncBusinessHoursSlots (replaces the whole set)
+  timezone: Europe/London
+  slots:
+    - { weekday: MONDAY, opensAt: "09:00", closesAt: "17:30" }
+
+threadFields:                        # → createThreadFieldSchema
+  - label: Resolution reason
+    key: resolution_reason           # ^[a-z0-9_]+$, immutable
+    type: ENUM                       # STRING | BOOL | ENUM | NUMBER | CURRENCY | DATE
+    enumValues: [fixed, wontfix, duplicate, user_error]
+    required: false
+    aiAutoFill: true
+    dependsOnLabels: []              # label names from `labels` above
+
+tenantFields:                        # → upsertTenantFieldSchema
+  - externalFieldId: arr
+    label: ARR
+    type: NUMBER_TYPE                # STRING_TYPE | NUMBER_TYPE | BOOLEAN_TYPE | STRING_ARRAY | DATETIME_TYPE | USER_REFERENCE_TYPE
+
+escalationPaths:                     # → createEscalationPath
+  - name: Billing escalation
+    steps:
+      - { type: USER, user: "jane@acme.com" }      # resolve to u_… ; NOT machine users
+      - { type: LABEL_TYPE, label: Billing }
+
+triage:                              # ONE workflow. See reference §8e before changing this shape.
+  trigger: thread_created            # thread_created | labels_changed | status_transitioned | schedule
+  cron: null                         # only when trigger: schedule
+  preFilters: []                     # deterministic conditions first — cheap and instant
+  classify:                          # else_if branches, evaluated IN ORDER, first match wins
+    - prompt: "Match if the customer reports a security vulnerability, exploit or data exposure — for example XSS, SQL injection or leaked credentials. Don't match for general questions about security features."
+      then:
+        label: Security
+        priority: 0
+        assignTo: "security@acme.com"     # resolve to a human user id
+    - prompt: "Match if the customer reports that existing functionality is broken, erroring or timing out — for example a 500 error or a failed export. Don't match for feature requests."
+      then:
+        label: Bug
+        priority: 1
+  fallbackLabel: Needs triage        # never leave this null
+
+savedViews:                          # → createSavedThreadsView
+  - name: Urgent billing
+    icon: fire                       # slug, not emoji
+    color: "#EF4444"
+    statuses: [TODO]
+    priorities: [0, 1]
+    labels: [Billing]
+
+helpCenter:                          # → createHelpCenter (+ groups + articles)
+  publicName: Acme Help Center
+  internalName: acme-help-center
+  subdomain: acme                    # globally unique
+  type: PUBLIC                       # PUBLIC | PRIVATE | INTERNAL
+  chatEnabled: true
+  ariEnabled: true
+  migrateFrom: "https://docs.acme.com/sitemap.xml"   # fetch real pages; never invent article text
+
+knowledgeSources:                    # → createKnowledgeSource
+  - { url: "https://acme.com/sitemap.xml", type: SITEMAP }
+
+sidekick:
+  customPrompt: "Always mention the 30-day refund policy."
+  customSkills:
+    - { displayName: Check subscription, description: "...", instructions: "..." }
+  mcpServers: []                     # OAuth ones need a human click — report, don't promise
+
+webhooks:                            # → createWebhookTarget
+  - url: "https://acme.com/plain-webhook"
+    events: [thread.thread_created]  # webhook event names ≠ workflow event names
+
+tenants:                             # → upsertTenant + upsertTenantField
+  - { name: Acme Inc, externalId: acme-inc, fields: { arr: 48000 }, tier: enterprise }
+
+needsHumanClick:                     # things you CANNOT do — carry into the report
+  invites: [{ email: jane@acme.com, role: SUPPORT }]
+  channels: [email, slack]
+```
+
+---
+
+## Execution order
+
+Dependencies are real — out of order means failures or orphaned config.
+
+1. **Tiers** → 2. **SLAs** (need `tierId`) → 3. **Business hours** → 4. **Labels** → 5. **Tenant field
+schemas** → 6. **Thread field schemas** (may reference labels) → 7. **Escalation paths** (reference
+labels + users) → 8. **Triage workflow** (needs label, user and tier IDs to exist) → 9. **Saved views** →
+10. **Help center** → groups → articles → 11. **Knowledge sources** → 12. **Sidekick** → 13. **Webhooks**
+→ 14. **Tenants + field values**.
+
+Keep a running map of `name → real ID` as you go. Everything downstream references IDs, and workflow step
+payloads embed them — a name-based payload silently applies nothing.
+
+## How to execute
+
+- **Resolve identities first.** Fetch `users(first: N) { edges { node { id publicName } } }` and map any
+  emails in the spec to real `u_…` IDs. `assign_to_user` with a machine user id returns SUCCESS and
+  assigns nobody — see reference. If an email doesn't match a workspace member, don't guess: move that
+  assignment into `needsHumanClick` and say so.
+- **One thing at a time, narrated.** Say what you're creating, create it, confirm with the real ID. Group
+  only trivially-related items (a batch of labels). Never fire ten mutations and report once.
+- **Check `error` on every mutation** before treating it as success — `error { message code fields { field message } }`. The
+  `fields` array names exactly what's wrong and is usually enough to fix and retry immediately.
+- **On failure:** say what failed, in plain language, with the real message. Then either fix and retry
+  (validation errors usually tell you the fix), skip it and record it for the report, or ask — but never
+  silently swallow it and never loop.
+- **Verify end state, not step status.** Some operations report success while doing nothing. After the
+  triage workflow is published, create one test thread and read
+  `workflowExecutions → stepExecutions[].output.matchedConditionIndex` to prove the branch fired and the
+  label, priority and assignment actually landed on the thread.
+
+## Building the triage workflow
+
+The single most error-prone part. Full detail in reference §8, but the shape:
+
+1. `createWorkflow` with the JSON trigger — this creates an **inactive draft**.
+2. Create the **terminal action steps first** (leaf-first), because `transitions` needs real step IDs.
+   Chain each branch's actions: `apply_labels` → `set_priority` → `assign_to_user`.
+3. Create the **`else_if` classify step** with one prompt per branch and
+   `transitions: [branch1, branch2, …, fallback]` — N conditions, N+1 transitions.
+4. Any deterministic pre-filters go *above* the classify step, pointing at it on the true branch.
+5. `updateWorkflow { startStepId, isPublished: true }` — until you do this it never runs.
+
+**Before creating a new workflow, audit what's already published:**
+`workflows(first: 20) { edges { node { id name publishedAt { iso8601 } } } }`. Multiple published
+workflows on one trigger all fire with no ordering guarantee — the classic symptom is every thread getting
+an unexpected label. If a conflicting one exists, tell the caller and agree whether to unpublish it rather
+than stacking another on top.
+
+To modify an existing published workflow: unpublish (`isPublished: false`), restructure, republish.
+`startStepId` can't be cleared while published.
+
+## What you cannot do — always report these
+
+- **Invite teammates.** `inviteUserToWorkspace` refuses machine users outright. Collect them into the
+  report as a UI task (Settings → Members). `assignRolesToUser` on an existing user does work.
+- **Complete channel OAuth** (Slack, MS Teams, Discord, email forwarding) or OAuth MCP servers. You can
+  provision shells; consent needs a browser. **Support is not live until a channel is connected** — say
+  so plainly rather than letting someone believe they're taking tickets.
+- **Set personal notification preferences.** No mutation exists; per-user, avatar → Preferences.
+- **Place the chat widget snippet** on their own site.
+- **Disable Plain's built-in AI triage**, which labels *and* sets priority independently of your workflow.
+  Mitigate by creating labels with `excludeFromAi: true`; for priority, flag Settings → Agents.
+
+## Output
+
+Return two things to whatever called you:
+
+1. **Built** — every object created, with its real ID, grouped by area. Machine-readable enough that a
+   caller can render it (the onboarding skill turns this into an HTML report).
+2. **Needs a human** — invites, channel OAuth, notification preferences, widget snippet, plus anything
+   that failed and why. Name the exact Settings page for each.
+
+Then remind them to delete the setup machine user or narrow its key — it can create tiers, invite-adjacent
+config and publish public help center content.
