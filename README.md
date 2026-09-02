@@ -4,9 +4,17 @@ Agent skills that teach a coding agent how to configure a [Plain](https://www.pl
 Plain's GraphQL API.
 
 Because Plain is API-first, everything about a workspace — tiers, SLAs, labels, routing, the AI agents,
-the help center — is an object an agent can read and change. These skills teach an agent to do that well,
-so a customer can set up or improve their workspace by talking to their own agent (Claude Code, Codex,
-Cursor) instead of clicking through settings screens.
+the help center — is an object an agent can read and change. That's a superpower and a barrier: the
+schema is ~440 mutations and ~19,000 lines, so a newcomer pointing an agent at it spends their first hour
+guessing, and several of the traps fail *silently* rather than erroring.
+
+**These skills are shepherds.** Each one covers one outcome — configure a workspace, pull insights — and
+says which handful of operations actually matter, in what order, with the gotchas already found. The point
+is to get it right the first time and one-shot the whole thing, instead of discovering the API's edges the
+hard way.
+
+They're useful even if you're writing the code yourself: the reference is a curated path through the
+schema, not just agent instructions.
 
 > **Status: prototype.** Every mutation in `reference/graphql-reference.md` has been executed against a
 > live Plain workspace, but the skills themselves are still being iterated on. Not yet an official Plain
@@ -17,10 +25,11 @@ Cursor) instead of clicking through settings screens.
 | Skill | Audience | What it does |
 | --- | --- | --- |
 | [`plain-setup`](./plain-setup/SKILL.md) | Net-new customers | Owns the user journey. Interviews someone about how support works today, designs the workspace with them, then hands a config spec to `plain-configuration` to build it. Ends with a live Sidekick demo and a handoff report. |
-| [`plain-configuration`](./plain-configuration/SKILL.md) | Called by other skills | The executor. Takes a config spec, applies it over the GraphQL API in the right dependency order, verifies each result, and reports what was built plus what needs a human click. |
+| [`plain-configuration`](./plain-configuration/SKILL.md) | Anyone changing a workspace | The executor. Takes a config spec, applies it over the GraphQL API in the right dependency order, verifies each result, and reports what was built plus what needs a human click. |
+| [`plain-insights`](./plain-insights/SKILL.md) | Existing customers | Read-only. Pulls CSAT, response and resolution times, SLA compliance and AI-vs-human handling by label, assignee and tier; builds an HTML dashboard; and turns each finding into a copy-paste prompt that calls `plain-configuration` to fix it. |
 
-Planned: `plain-tune` (change an existing workspace by intent) and `plain-insights` (analyse CSAT,
-response and resolution times, then recommend fixes as prompts that call `plain-configuration`).
+Planned: `plain-tune` — change an existing workspace from a description of what you want, rather than from
+the data.
 
 The split matters: the journey skill owns the conversation, the configuration skill owns the API. That
 keeps the conversation uncluttered and makes the executor reusable by every future skill.
