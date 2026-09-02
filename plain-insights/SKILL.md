@@ -56,14 +56,18 @@ and so on.
 `CUSTOMER_GROUP`, `MESSAGE_SOURCE`, plus `THREAD_FIELD` and `TENANT_FIELD` (both need `subKey` set to the
 field key / external ID).
 
-**Gotchas that will waste your time otherwise:**
-- `to` **cannot be in the future** — even tomorrow's date fails validation.
-- Output is `values { value group { … } }` — `group` singular.
-- **CSAT metrics require `filters.surveyResponse.rating`**, which the schema doesn't tell you.
+**Requirements the schema doesn't state, and each one is a hard validation error:**
+- `to` **cannot be in the future** — even tomorrow's date fails.
+- Output is `values { value group { … } }` — `group` singular, not `groups`.
+- **`agent_` metrics require a `groupBy`.** Pass `{ dimension: ASSIGNEE }` for a per-agent breakdown, or
+  another dimension together with `filters.userIds`. A bare `agent_` query is rejected.
+- **CSAT metrics require `filters.surveyResponse.rating`**, e.g.
+  `filters: { surveyResponse: { rating: [1,2,3,4,5] } }`.
 - All-time counts (`threads_all_time_count_done`) **reject** a date range; everything else requires one.
-- `percentile` is only accepted on the configurable-percentile duration metrics.
-- Empty `values` usually means no qualifying threads in the window, not a broken query. Widen the range
-  before concluding anything.
+- `percentile` only applies to the configurable-percentile duration metrics.
+- `threadTimeSeriesMetric` additionally needs `interval` (e.g. `DAY`).
+- Empty `values` means no qualifying threads in the window, not a broken query — widen the range before
+  concluding anything, and never present an empty result as a finding.
 
 Beyond metrics, three qualitative sources matter: `knowledgeGaps` (AI-generated summaries of questions
 customers aren't finding answers to), `threadClusters` (recurring themes), and `customerSurveys`.
@@ -77,9 +81,10 @@ Don't dump every metric. Go after the questions that lead somewhere:
    category that's 10× the others usually has no routing rule or no owner.
 2. **Which categories hurt satisfaction?** `threads_csat__percentage` by `LABEL_TYPE`. Cross-reference
    with resolution time; slow *and* unhappy is a different problem from slow but tolerated.
-3. **How does AI-handled compare to human-handled?** The `agent_` variants against the base ones. This is
-   the most interesting chart most workspaces have never seen — and it tells you whether to widen or
-   narrow Ari's remit.
+3. **How does AI-handled compare to human-handled?** The `agent_` variants against the base ones —
+   remembering that `agent_` metrics need a `groupBy` (`ASSIGNEE` is usually what you want). This is the
+   most interesting chart most workspaces have never seen, and it tells you whether to widen or narrow
+   Ari's remit.
 4. **Are SLAs actually being met, by tier?** `service_level_agreement_compliance_frt` by `TIER`. A tier
    with an aspirational SLA nobody hits is worse than no SLA.
 5. **Is load lopsided across people?** Duration and volume by `ASSIGNEE` (needs `metricsAgent:read`).

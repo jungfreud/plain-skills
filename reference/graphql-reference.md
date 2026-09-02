@@ -1,8 +1,10 @@
-# Plain GraphQL setup reference
+# Plain GraphQL configuration reference
 
-Every mutation below has been **executed against a live Plain workspace** and corrected against what the
-API actually accepts — not just what the schema implies. Where the schema and the runtime validator
-disagree, the runtime wins and is noted.
+A curated path through Plain's GraphQL API for configuring a workspace: the operations that matter, in the
+order they depend on each other, with their real input shapes.
+
+Where the schema and the runtime validator disagree, this documents what the API actually accepts. Those
+cases are called out — they're the ones that cost you an afternoon otherwise.
 
 **Endpoint:** `https://core-api.uk.plain.com/graphql/v1` (POST only)
 **Auth:** `Authorization: Bearer plainApiKey_xxx` plus `Content-Type: application/json`
@@ -20,7 +22,7 @@ Full docs index: `https://www.plain.com/docs/llms.txt`. Raw schema (for input-ty
 
 ---
 
-## Gotchas that will bite you (all verified the hard way)
+## Gotchas that will bite you
 
 1. **`DateTime` is an object, not a scalar.** Every timestamp needs subfields:
    `publishedAt { iso8601 }` or `{ unixTimestamp }`. Selecting it bare is a validation error.
@@ -54,7 +56,7 @@ Full docs index: `https://www.plain.com/docs/llms.txt`. Raw schema (for input-ty
 
 ---
 
-## 1. Tiers  ✅ verified
+## 1. Tiers
 
 ```graphql
 mutation { createTier(input: {
@@ -67,7 +69,7 @@ mutation { createTier(input: {
 Scopes: `tier:create`, `tier:read`, `tier:edit`, `tier:delete`, `tierMembership:create/delete/read`.
 Add members later with `addMembersToTier`.
 
-## 2. SLAs (per tier)  ✅ verified
+## 2. SLAs (per tier)
 
 One record per response type — **not both in one call.**
 
@@ -95,7 +97,7 @@ mutation { createServiceLevelAgreement(input: {
 ```
 Scopes: `serviceLevelAgreement:create/edit/delete`.
 
-## 3. Business hours  ✅ verified
+## 3. Business hours
 
 Output field is `slots`. `BusinessHoursSlot` has **no `id`** — only timezone/weekday/opensAt/closesAt.
 
@@ -110,7 +112,7 @@ mutation { syncBusinessHoursSlots(input: {
 This replaces the full set of slots each call. Scopes: `businessHours:edit`, `businessHours:read`.
 (`upsertBusinessHours` exists but is deprecated.)
 
-## 4. Label types  ✅ verified
+## 4. Label types
 
 ```graphql
 mutation { createLabelType(input: {
@@ -126,8 +128,8 @@ mutation { createLabelType(input: {
 
 **Always create labels with `isExcludedFromAi: true` unless the customer explicitly asks otherwise.**
 Plain's built-in AI triage applies labels independently of your workflows, so leaving this `false` means
-two systems label the same threads and your carefully-built triage tree stops being authoritative — a
-thread routed to `Security` also picked up an unrelated `Bug` label in testing. Excluding labels from the
+two systems label the same threads and your triage tree stops being authoritative — a thread routed to
+`Security` can also pick up an unrelated `Bug` label. Excluding labels from the
 built-in AI makes your workflow the single source of truth, which is what a customer designing explicit
 triage rules actually wants. Existing labels can be flipped with
 `updateLabelType(input: { labelTypeId: "lt_...", isExcludedFromAi: { value: true } })`.
@@ -135,7 +137,7 @@ Scopes: `labelType:create/edit/read`, `label:create`, `suggestedLabelType:read`.
 Also `archiveLabelType`/`unarchiveLabelType` (prefer archiving), `moveLabelType`,
 `suggestedLabelTypes` + `acceptSuggestedLabelTypes` (useful when migrating).
 
-## 5. Tenant field schemas  ✅ verified
+## 5. Tenant field schemas
 
 ```graphql
 mutation { upsertTenantFieldSchema(input: {
@@ -149,7 +151,7 @@ mutation { upsertTenantFieldSchema(input: {
 ```
 Scopes: `tenantFieldSchema:create/update/read/delete` (note `:update`, not `:edit`).
 
-## 6. Thread field schemas  ✅ verified
+## 6. Thread field schemas
 
 ```graphql
 mutation { createThreadFieldSchema(input: {
@@ -168,7 +170,7 @@ mutation { createThreadFieldSchema(input: {
 ```
 Scopes: `threadFieldSchema:create/edit/read/delete` (`:edit`, not `:update`), `threadField:create/update/read/delete`.
 
-## 7. Escalation paths  ✅ verified
+## 7. Escalation paths
 
 `EscalationPathStepType` is **`USER`** (with `userId` — machine users allowed) or **`LABEL_TYPE`** (with
 `labelTypeId`). There is no `ASSIGN_USER`/`ADD_LABEL`.
@@ -185,7 +187,7 @@ mutation { createEscalationPath(input: {
 ```
 Scopes: `escalationPath:create/edit/read/delete/execute`.
 
-## 8. Workflows  ✅ verified end-to-end
+## 8. Workflows
 
 **Four steps, or it silently never runs:** create (draft) → add steps → set `startStepId` → publish.
 
@@ -245,7 +247,7 @@ mutation { updateWorkflow(input: {
 Note: there is **no `workflow:*` permission scope** — only `workflowRule:create/edit/read/trigger`.
 Workflow mutations succeeded with an Admin-preset key. `startStepId` can't be cleared while published.
 
-### 8d. AI prompt conditions and branching  ✅ verified live, end-to-end
+### 8d. AI prompt conditions and branching
 
 The AI condition takes a **plain-English prompt inline** — you do *not* need to create a `WorkflowRule`
 first:
@@ -288,16 +290,16 @@ query { workflowExecutions(workflowId: "wf_...", first: 5) { edges { node {
 Note `triggeredBy` comes back prefixed — `domain.thread.thread_created` — while the trigger config uses
 `thread.thread_created`.
 
-### 8e. Architecture: how to actually structure triage + routing  ⚠️ read before designing
+### 8e. Architecture: how to structure triage and routing
 
-Three constraints, all verified live, that dictate the design:
+Three constraints dictate the design:
 
 1. **Workflow actions do not cascade into other workflows.** A label applied by a workflow
    (`systemId: workflows_handler`) does **not** fire a workflow triggered on
-   `thread.thread_labels_changed`. Verified: triage applied `Security`, the label-triggered routing
-   workflow recorded **zero executions**.
-2. **API- or human-applied label changes *do* fire those workflows.** The same routing workflow fired
-   immediately (`conditionMatched: true`, priority set to urgent) when the label came from `addLabels`.
+   `thread.thread_labels_changed`. A triage workflow applying `Security` produces **zero executions** on a
+   workflow listening for label changes.
+2. **API- or human-applied label changes *do* fire those workflows.** The same workflow fires
+   immediately when the label comes from `addLabels` or a person in the app.
 3. **Triggers are an OR-list of events.** No AND, no predicates at the trigger level — all narrowing
    happens in condition steps.
 
@@ -320,8 +322,8 @@ does not work for automated triage.** The second layer never fires.
      {"version":1,"type":"ai_workflow_rule_condition","prompt":"something is broken or erroring"},
      {"version":1,"type":"ai_workflow_rule_condition","prompt":"requesting a new feature"}]}
    ```
-   Verified: a "charts not loading, console shows 502" thread returned `matchedConditionIndex: 1` and
-   applied `Bug` — **one step, one execution**, and the third prompt was never evaluated.
+   A "charts not loading, console shows 502" thread returns `matchedConditionIndex: 1` and applies
+   `Bug` — **one step, one execution**, and the third prompt is never evaluated.
 3. **Chain the per-branch actions** — ACTION steps take `transitions: [nextStepId]`, so a branch can run
    `apply_labels` → `set_priority` → `assign_to_team` → `escalate_thread` in sequence.
 
@@ -375,7 +377,7 @@ their schemas, and attachment count. **Nothing else** — no CRM, no product usa
    genuine language judgement.
 6. **Always wire the fallback branch.** `transitions` has N+1 entries; the last one is "nothing matched".
    Point it at a `Needs triage` label rather than `null`, so unclassified threads are visible instead of
-   silently untouched. Verified: *"Thanks for the help"* matched nothing and landed in `Needs triage`.
+   silently untouched. A message like *"Thanks for the help"* matches nothing and needs somewhere to go.
 7. **Tune from traces, not vibes.** `stepExecutions[0].output.matchedConditionIndex` tells you exactly
    which prompt won. Push your real historical threads through it and reword wherever the index is wrong.
 8. **One or two sentences.** Long prompts drift.
@@ -397,8 +399,8 @@ step status.
 
 ### ⚠️ Plain's built-in AI triage also labels threads **and sets priority**
 
-Plain runs its own AI triage independently of your workflows. In testing, a thread got the workflow's
-`Security` label **and** an unrelated `Bug` label — the latter applied by a different system actor:
+Plain runs its own AI triage independently of your workflows, so a thread can carry your workflow's
+`Security` label **and** an unrelated `Bug` label applied by a different system actor:
 
 ```
 labels[].createdBy.systemId == "workflows_handler"      ← your workflow
@@ -408,14 +410,13 @@ If a label should be controlled *only* by your workflow, create it with **`isExc
 Otherwise expect built-in triage to apply it too, and don't mistake that for a workflow bug. Checking
 `createdBy.systemId` on a thread's labels tells you instantly which system applied what.
 
-**It sets priority too.** A thread whose workflow only applied a label (no priority action existed) still
-came back at priority `0` — built-in triage set it. And a thread where the workflow set priority `1`
-(high) ended up at `0`, i.e. the two systems compete and last-writer-wins. There is **no setting in the
+**It sets priority too.** A thread whose workflow only applies a label can still come back at priority
+`0`, and a workflow that sets priority `1` can end up at `0` — the two systems compete, last writer wins. There is **no setting in the
 GraphQL schema to disable built-in triage** — it appears to be UI/plan-level, so if deterministic
 priority matters to a customer, check Settings → Agents in the app rather than assuming the workflow is
 authoritative. Always verify the end state on a test thread instead of trusting the step trace.
 
-## 8g. Metrics — for auditing an existing workspace  ✅ verified
+## 8g. Metrics — auditing an existing workspace
 
 Useful when tuning rather than setting up: find where response times are worst, which labels drag CSAT
 down, how AI-handled threads compare to human-handled.
@@ -455,7 +456,7 @@ query { threadSingleValueMetric(input: {
   one.
 - `percentile` is only accepted on the configurable-percentile duration metrics; it's rejected elsewhere.
 
-## 9. Saved (custom) views  ✅ verified
+## 9. Saved (custom) views
 
 Nearly every `threadsFilter` field is non-null — an empty `{}` is rejected. Pass empty arrays. And the
 two `@deprecated` display flags are still **required**.
@@ -487,7 +488,7 @@ mutation { createSavedThreadsView(input: {
 ```
 `and`/`or`/`not` accept nested filters. Scopes: `savedThreadsView:create/edit/read/delete`.
 
-## 10. Help center + migration  ✅ verified
+## 10. Help center + migration
 
 ```graphql
 mutation { createHelpCenter(input: {
@@ -518,7 +519,7 @@ Scopes: `helpCenter:create/edit/read/delete` plus **separate** `helpCenterArticl
 For bulk migration: fetch each source page, convert to clean HTML, create groups mirroring their nav,
 then loop `upsertHelpCenterArticle`.
 
-## 11. Ari knowledge sources  ✅ verified
+## 11. Ari knowledge sources
 
 `KnowledgeSource` is a union — use inline fragments.
 
@@ -539,7 +540,7 @@ mutation { createKnowledgeSource(input: {
 A help center you create is auto-indexed — no separate source needed. Scopes:
 `knowledgeSource:create/read/delete`. Also `reindexKnowledgeSource`, `deleteKnowledgeSource`.
 
-## 12. Sidekick  ✅ verified (settings + custom skill)
+## 12. Sidekick
 
 ```graphql
 mutation { updateSidekickSettings(input: {
@@ -563,7 +564,7 @@ Per-integration scopes exist and are individually gated:
 `sidekickLaunchdarklyIntegration:update`, plus `workspaceSlackSidekickIntegration:create/update/delete`.
 OAuth-based connectors still need a human to complete consent in the browser.
 
-## 13. Webhook targets  ✅ verified
+## 13. Webhook targets
 
 ```graphql
 mutation { createWebhookTarget(input: {
@@ -591,7 +592,7 @@ events): `thread.thread_created`, `thread.thread_status_transitioned`,
 `customer.customer_group_changed`, `customer.customer_group_memberships_changed`,
 `timeline.timeline_entry_changed`. Scopes: `webhookTarget:create/edit/read/delete`.
 
-## 14. Team members and roles  ⚠️ invites are UI-only
+## 14. Team members and roles — invites are UI-only
 
 ```graphql
 # ❌ FAILS with a machine-user key:
@@ -607,7 +608,7 @@ mutation { assignRolesToUser(input: { userId: "u_...", roleKey: SUPPORT }) { err
 ```
 `RoleKey`: `OWNER | ADMIN | SUPPORT | VIEWER | NONE`, or `customRoleId`. Scopes: `roles:read/assign/create/edit`.
 
-## 15. Tenants and field values  ✅ verified
+## 15. Tenants and field values
 
 ```graphql
 mutation { upsertTenant(input: {
@@ -630,11 +631,11 @@ Scopes: `tenant:create/read/delete`, `tenantField:create/update/read/delete`. Ti
 
 ---
 
-## Permission scopes — corrected against a live key
+## Permission scopes
 
-An Admin-preset key reported **390 scopes**. Corrections to earlier guesses:
+An Admin-preset key carries roughly 390 scopes. The ones this configuration flow uses:
 
-| Area | Real scopes |
+| Area | Scopes |
 |---|---|
 | Tiers | `tier:create`, `tier:read`, `tier:edit`, `tier:delete`, `tierMembership:create/delete/read` |
 | SLAs | `serviceLevelAgreement:create/edit/delete` |
@@ -656,7 +657,7 @@ An Admin-preset key reported **390 scopes**. Corrections to earlier guesses:
 Easiest path for a one-time setup key remains the **Admin preset**. Delete the machine user
 (`deleteMachineUser`) or narrow the key afterwards.
 
-## Confirmed UI-only (cannot be done with a setup key)
+## What can't be done with an API key
 
 - **Inviting teammates** — `inviteUserToWorkspace` rejects machine users outright. Settings → Members.
 - **Personal notification preferences** — no mutation exists (`updateInternalNotifications` only marks

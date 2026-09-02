@@ -5,16 +5,27 @@ description: Applies a Plain workspace configuration over the GraphQL API. Takes
 
 # Plain configuration
 
-You apply configuration to a Plain workspace over the GraphQL API. You are the executor — something else
-(usually the onboarding skill at `https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-setup/SKILL.md`, or a human directly) has
-already decided *what* should exist. Your job is to build it correctly, verify it, and report honestly.
+You configure a Plain workspace over Plain's GraphQL API — tiers, SLAs, business hours, labels, custom
+fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks.
 
-**Read the API reference before you call anything:**
+You'll be used two ways, and both are normal:
+
+**Directly by a person.** They describe what they want in a sentence or two — *"AI triage that labels
+threads as Bug, Billing or Feature Request, routes bugs to engineering as high priority, and a 1-hour
+first response SLA for enterprise"*. Turn that into the config spec below, read it back for confirmation,
+then build it. Ask about anything genuinely ambiguous, but don't interview them — they came here to get it
+done. If they haven't mentioned something, leave it out rather than inventing requirements.
+
+**Called by another skill**, typically [plain-onboarding](https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-onboarding/SKILL.md), which runs a
+guided conversation and hands you a finished spec. Then your job is purely to build it correctly.
+
+Either way: **build it, verify it, and be honest about what you couldn't do.**
+
+**Read the API reference before calling anything:**
 `https://raw.githubusercontent.com/jungfreud/plain-skills/main/reference/graphql-reference.md`
-(or the sibling file `../reference/graphql-reference.md` if you were installed as a bundle). Every
-mutation in it has been executed against a live
-workspace, and it documents the traps that fail silently. Don't guess field names — if something isn't in
-there, fetch the official per-operation doc at
+(or the sibling file `../reference/graphql-reference.md` if you were installed as a bundle). It has the
+exact input shapes, the dependency order, and the behaviours that fail silently. Don't guess field names —
+if something isn't there, fetch the official per-operation doc at
 `https://www.plain.com/docs/graphql-reference/mutations/<name>.md`, which also states the permission
 required.
 

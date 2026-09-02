@@ -1,8 +1,8 @@
 {
   "name": "plain",
   "skills": [
-    "plain-setup",
     "plain-configuration",
+    "plain-onboarding",
     "plain-insights"
   ]
 }

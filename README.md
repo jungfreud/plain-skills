@@ -1,101 +1,150 @@
-# Plain skills
+<h1 align="center">Plain skills</h1>
 
-Agent skills that teach a coding agent how to configure a [Plain](https://www.plain.com) workspace over
-Plain's GraphQL API.
+<p align="center">
+  Configure and improve your <a href="https://www.plain.com">Plain</a> workspace by talking to your coding agent.
+</p>
 
-Because Plain is API-first, everything about a workspace — tiers, SLAs, labels, routing, the AI agents,
-the help center — is an object an agent can read and change. That's a superpower and a barrier: the
-schema is ~440 mutations and ~19,000 lines, so a newcomer pointing an agent at it spends their first hour
-guessing, and several of the traps fail *silently* rather than erroring.
+<p align="center">
+  <a href="https://www.plain.com">plain.com</a> ·
+  <a href="https://www.plain.com/docs">Docs</a> ·
+  <a href="https://www.plain.com/docs/graphql/introduction">GraphQL API</a>
+</p>
 
-**These skills are shepherds.** Each one covers one outcome — configure a workspace, pull insights — and
-says which handful of operations actually matter, in what order, with the gotchas already found. The point
-is to get it right the first time and one-shot the whole thing, instead of discovering the API's edges the
-hard way.
+---
 
-They're useful even if you're writing the code yourself: the reference is a curated path through the
-schema, not just agent instructions.
+## What this is
 
-> **Status: prototype.** Every mutation in `reference/graphql-reference.md` has been executed against a
-> live Plain workspace, but the skills themselves are still being iterated on. Not yet an official Plain
-> product.
+[Plain](https://www.plain.com) is a customer support platform for software companies. Everything in it —
+tiers, SLAs, labels, routing, the AI agents, the help center — is a first-class object in a GraphQL API
+rather than something buried in a settings screen. Anything you can do in the app, you can do over the API.
 
-## Skills
+That's powerful, and it's also a lot to take in: the schema runs to roughly 440 mutations. If you point an
+agent at it cold, it has to work out which handful of operations matter, what order they depend on, and
+which inputs the schema describes differently to how the API actually validates them.
 
-| Skill | Audience | What it does |
+**These skills are that shortcut.** Each one is a single Markdown file that teaches an agent how to use
+Plain's API for one specific outcome — configure a workspace, or pull insights out of one — so you get it
+right first time and finish in one sitting.
+
+## Who it's for
+
+- **New to Plain** and you'd rather your agent set the workspace up than click through settings.
+- **Already on Plain** and you want to change how triage, routing or SLAs work without hunting through
+  docs.
+- **A developer** integrating with Plain's API, agent or not. The reference is a curated path through the
+  schema and stands on its own.
+
+You don't need to know the GraphQL API, and you don't need to install anything.
+
+## The skills
+
+Each is standalone. Load whichever matches what you're doing — or let the onboarding skill call the
+configuration skill for you.
+
+| Skill | Use it when | What it does |
 | --- | --- | --- |
-| [`plain-setup`](./plain-setup/SKILL.md) | Net-new customers | Owns the user journey. Interviews someone about how support works today, designs the workspace with them, then hands a config spec to `plain-configuration` to build it. Ends with a live Sidekick demo and a handoff report. |
-| [`plain-configuration`](./plain-configuration/SKILL.md) | Anyone changing a workspace | The executor. Takes a config spec, applies it over the GraphQL API in the right dependency order, verifies each result, and reports what was built plus what needs a human click. |
-| [`plain-insights`](./plain-insights/SKILL.md) | Existing customers | Read-only. Pulls CSAT, response and resolution times, SLA compliance and AI-vs-human handling by label, assignee and tier; builds an HTML dashboard; and turns each finding into a copy-paste prompt that calls `plain-configuration` to fix it. |
+| **[plain-configuration](./plain-configuration/SKILL.md)** | You know what you want your workspace to do | Teaches your agent to build it: tiers, SLAs, business hours, labels, custom fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks. Applies everything in the right order, verifies each step, and tells you what still needs a click in the app. |
+| **[plain-onboarding](./plain-onboarding/SKILL.md)** | You're starting from scratch and want to be walked through it | A guided conversation about how your support actually works today. It designs the workspace with you, explains what each choice buys you, then hands the result to **plain-configuration** to build. |
+| **[plain-insights](./plain-insights/SKILL.md)** | You want to know what to improve | Read-only. Pulls CSAT, first response and resolution times, SLA compliance and AI-vs-human handling — by label, assignee, tier and channel — into an HTML dashboard, then turns each finding into a prompt you can paste to fix it. |
 
-Planned: `plain-tune` — change an existing workspace from a description of what you want, rather than from
-the data.
-
-The split matters: the journey skill owns the conversation, the configuration skill owns the API. That
-keeps the conversation uncluttered and makes the executor reusable by every future skill.
-
-## Reference
-
-[`reference/graphql-reference.md`](./reference/graphql-reference.md) is a cleansed, **verified** guide to
-the ~30 mutations that matter for workspace setup, out of ~440 in the schema. It documents the exact input
-shapes plus the traps that fail silently — for example:
-
-- SLA first-response and next-response times are mutually exclusive (undocumented; needs two records)
-- `assign_to_user` with a machine-user id returns `SUCCESS` and assigns nobody
-- `inviteUserToWorkspace` is forbidden to machine users entirely, so invites can't be automated
-- Workflow actions don't cascade into other workflows, which breaks the intuitive "triage labels → routing
-  reacts to label" design
-- `DateTime` is an object, not a scalar; label icons are slugs, not emoji
-
-It also covers the recommended triage architecture: one workflow on thread creation, deterministic
-conditions first, then a single `else_if` switch of AI prompt conditions (an N-way switch that
-short-circuits on first match), with each branch chaining its own label → priority → assignment actions.
-
-## Use it
-
-**Zero install** — paste into any agent with a shell:
+The modularity is the point. **plain-configuration** is the engine and works entirely on its own —
+describe what you want in a sentence and your agent can one-shot it. **plain-onboarding** is a
+conversation layer that produces a configuration spec and calls the engine with it. **plain-insights**
+looks at what's actually happening and hands you prompts that call the engine too.
 
 ```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-setup/SKILL.md
-and follow exactly what it outputs. I don't have a Plain account yet — walk me through creating one,
-then set up my workspace.
+                 plain-onboarding ─┐
+   (guided conversation)           │
+                                   ├──▶  plain-configuration  ──▶  your workspace
+                 plain-insights ───┘         (the engine)
+   (find what to improve)
 ```
 
-A `curl` command rather than "read this URL" is deliberate: not every agent exposes a web-fetch tool, but
-essentially all of them can run a shell command.
+## Get started
 
-**Or install as skills** (via [skills.sh](https://www.skills.sh)):
+Paste this into any agent with a terminal — Claude Code, Codex, Cursor:
+
+**Set up a new workspace, guided:**
+
+```
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-onboarding/SKILL.md
+and follow exactly what it outputs. I'm new to Plain — walk me through it and set up my workspace.
+```
+
+**Already know what you want:**
+
+```
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md
+and follow it. I want AI triage that labels incoming threads as Bug, Billing or Feature Request, routes
+bugs to engineering as high priority, and a 1-hour first response SLA for enterprise customers.
+```
+
+**Find out what to improve:**
+
+```
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-insights/SKILL.md
+and follow it. Show me where our support is slowest and what I should change.
+```
+
+It's a `curl` rather than "read this URL" because not every agent has a web-fetch tool, but they can all
+run a shell command.
+
+Prefer a package manager? Via [skills.sh](https://www.skills.sh):
 
 ```
 npx skills add jungfreud/plain-skills
 ```
 
-## What you need
+## Your API key
 
-A Plain workspace and an API key from **Settings → Machine Users → Add API key**. The Admin preset is the
-simplest for a one-time setup key; the precise scope list is in the reference.
+You'll need a Plain workspace and an API key: **Settings → Machine Users → Add API key**. The Admin preset
+covers everything; if you'd rather scope it tightly, the exact permissions are listed in the
+[reference](./reference/graphql-reference.md).
 
-Hand the key to your agent as an environment variable rather than pasting it into the chat:
+**Don't paste the key into the chat.** Set it as an environment variable yourself:
 
 ```bash
 echo 'export PLAIN_SETUP_KEY="plainApiKey_xxx"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-Then tell the agent it's set. The skills reference `$PLAIN_SETUP_KEY` and never read or print its value.
-Delete the machine user or narrow the key when you're done — it can create tiers and publish public help
-center content.
+Then just tell your agent it's set. The skills reference `$PLAIN_SETUP_KEY` and never read or print its
+value, so the secret stays out of your conversation history.
 
-## Testing
+When you're done, delete the machine user or narrow the key — a setup key can create tiers and publish
+public help center content.
 
-`tests/smoke.sh` runs a read-only check that the API still matches what the reference documents. Run it
-against a **throwaway workspace**, not production.
+For **plain-insights**, a read-only key is enough (`metrics:read`, `metricsAgent:read`, `thread:read`,
+`labelType:read`, `tier:read`, `user:read`, `permission:read`), which is a safer thing to hand an agent.
+
+## The reference
+
+[`reference/graphql-reference.md`](./reference/graphql-reference.md) is the curated path through the API:
+the ~30 mutations that matter for configuring a workspace, with their exact input shapes, the dependency
+order, and the behaviours you'd otherwise find the hard way. For example:
+
+- A workflow's SLA first-response and next-response targets are mutually exclusive — you need two records
+- `inviteUserToWorkspace` can't be used by machine users, so invites are always a human step
+- Workflow actions don't cascade into other workflows, which changes how you structure triage and routing
+- `assign_to_user` given a machine-user ID reports success and assigns nobody
+- Label icons are slugs, not emoji; `DateTime` is an object, not a scalar
+
+It also lays out the recommended triage architecture: one workflow on thread creation, cheap deterministic
+conditions first, then a single `else_if` switch of AI prompt conditions — an N-way switch that stops at
+the first match — with each branch chaining its own label, priority and assignment actions.
+
+## Verify it still holds
+
+`tests/smoke.sh` is a read-only check that the API still behaves the way the reference describes.
 
 ```bash
 PLAIN_SETUP_KEY=plainApiKey_xxx ./tests/smoke.sh
 ```
 
-## Contributing
+## Found something wrong?
 
-The reference encodes real API behaviour and will rot silently if Plain's API changes and nobody re-runs
-the verification. If you hit something that doesn't match, please open an issue or a PR with the actual
-error the API returned.
+APIs move. If a skill hits something that doesn't match, please
+[open an issue](https://github.com/jungfreud/plain-skills/issues) with the error the API returned — that's
+the most useful contribution there is.
+
+For questions about Plain itself, see the [docs](https://www.plain.com/docs) or
+[get in touch](https://www.plain.com).
