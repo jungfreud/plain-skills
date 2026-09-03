@@ -97,6 +97,14 @@ mutation { createServiceLevelAgreement(input: {
 ```
 Scopes: `serviceLevelAgreement:create/edit/delete`.
 
+**SLAs attach to a tier and filter by priority — they cannot key off a label.** "Anything tagged fraud gets
+15 minutes regardless of plan" is not directly expressible. Get it via priority instead: have triage set
+`priority: 0` on those threads, and give each tier a 15-minute SLA on priority 0. Explain the mechanism,
+because "why did a free-tier ticket have a 15-minute clock?" has to be answerable later — and note the
+consequence, that the clock is then only as reliable as the classifier. For a high-stakes carve-out, put a
+deterministic pre-filter (a dedicated support address, a tier check) above the AI branch so the critical
+path never depends on a prompt.
+
 ## 3. Business hours
 
 Output field is `slots`. `BusinessHoursSlot` has **no `id`** — only timezone/weekday/opensAt/closesAt.
@@ -125,6 +133,10 @@ mutation { createLabelType(input: {
   isExcludedFromAi: true     # DEFAULT TO TRUE — see below
 }) { labelType { id name } error { message code fields { field message } } } }
 ```
+
+`icon` is validated by **format, not against a fixed list** — any `^[a-z0-9_-]+$` value is accepted
+(`shield`, `credit-card`, `question-mark`, `fire` all work). There is no icon enum to look up; just never
+pass an emoji.
 
 **Always create labels with `isExcludedFromAi: true` unless the customer explicitly asks otherwise.**
 Plain's built-in AI triage applies labels independently of your workflows, so leaving this `false` means
@@ -329,7 +341,8 @@ does not work for automated triage.** The second layer never fires.
 
 **Why this beats a chain:** each `ai_workflow_rule_condition` is an LLM call (~1–3s). Three chained binary
 AI conditions is three sequential calls on the worst-case path; one `else_if` is a single step that
-short-circuits. Order the branches most-likely-first.
+short-circuits. Order the branches most-likely-first — **except** a rare high-stakes branch, which goes
+first regardless (see §8f rule 4).
 
 **What label-triggered workflows are still for:** reacting to a *human* agent manually re-labelling a
 thread. Keep them for that — just never rely on them to catch automated output.
@@ -367,10 +380,13 @@ their schemas, and attachment count. **Nothing else** — no CRM, no product usa
 3. **One decision per prompt.** Don't stuff several outcomes into one condition, and don't ask the prompt
    to take actions — it only returns match/no-match; actions are separate steps. If you need real boolean
    logic, use the `and` / `or` / `not` combinators. Prefer positive statements over stacked negations.
-4. **Order is your tiebreaker, and it does real work.** `else_if` stops at the first match, so put the
-   highest-stakes and most specific case first. A security bug should hit `security` before `bug` purely
-   because security is listed first. Later prompts may assume the earlier ones were false — don't
-   over-qualify them ("a bug but not a security issue" is unnecessary and hurts).
+4. **Order is your tiebreaker, and it does real work.** `else_if` stops at the first match, so ordering
+   *is* the conflict-resolution rule — there is no scoring and no "best match". The precedence:
+   **stakes first, frequency second.** A branch that would be expensive to mis-triage (security, fraud,
+   legal, churn risk) goes at index 0 regardless of how rare it is — you are paying a few hundred
+   milliseconds on every thread to buy that. Order everything after it most-likely-first for latency, and
+   say which rule you applied so the person can disagree. Later prompts may assume the earlier ones
+   returned false — don't over-qualify them ("a bug but not a security issue" is unnecessary and hurts).
 5. **Only ask about what's actually in the thread.** The model sees the conversation, not your CRM,
    plan tier, or the sending domain. Route on those with deterministic conditions
    (`customer_equals`, tier, `support_email_equals`) — they're free and instant. Save prompts for
@@ -456,6 +472,19 @@ query { threadSingleValueMetric(input: {
   one.
 - `percentile` is only accepted on the configurable-percentile duration metrics; it's rejected elsewhere.
 
+## 8h. Teams and assignment targets
+
+`assign_to_team` needs a real `team_…` id — payloads embed ids, not names:
+
+```graphql
+query { teams(first: 20) { edges { node { id name } } } }
+```
+
+**There is no verified team-creation mutation.** If a team doesn't exist, have someone create it in
+Settings → Teams and read the id back rather than routing to a name and hoping. Plain also has **no
+on-call rotation primitive**: the options are a team, an escalation path (ordered, not rotating), or a
+fixed person. Surface the choice rather than picking one silently.
+
 ## 9. Saved (custom) views
 
 Nearly every `threadsFilter` field is non-null — an empty `{}` is rejected. Pass empty arrays. And the
@@ -487,6 +516,10 @@ mutation { createSavedThreadsView(input: {
 }) { savedThreadsView { id name } error { message code fields { field message } } } }
 ```
 `and`/`or`/`not` accept nested filters. Scopes: `savedThreadsView:create/edit/read/delete`.
+
+**`assignedToUser: []` means "no assignee filter", not "unassigned".** There is no is-null operator, so a
+view intended as "unassigned urgent" built that way silently shows *all* urgent threads. Either group by
+`ASSIGNEE` so unassigned collects in one column, or test a nested `not` filter on a real thread first.
 
 ## 10. Help center + migration
 

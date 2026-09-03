@@ -58,7 +58,7 @@ labels:                              # → createLabelType
     icon: credit-card                # slug, NOT emoji
     color: "#22C55E"
     externalId: billing
-    excludeFromAi: true              # DEFAULT TRUE — see reference §4
+    isExcludedFromAi: true           # DEFAULT TRUE — see reference §4
 
 tiers:                               # → createTier, then createServiceLevelAgreement per SLA
   - name: Enterprise
@@ -114,6 +114,10 @@ triage:                              # ONE workflow. See reference §8e before c
         priority: 1
   fallbackLabel: Needs triage        # never leave this null
 
+snippets:                            # → createSnippet (saved replies / macros)
+  - name: "Card declined — first response"
+    text: "..."                      # VERBATIM. Never paraphrase or tidy saved-reply text.
+
 savedViews:                          # → createSavedThreadsView
   - name: Urgent billing
     icon: fire                       # slug, not emoji
@@ -150,6 +154,7 @@ tenants:                             # → upsertTenant + upsertTenantField
 needsHumanClick:                     # things you CANNOT do — carry into the report
   invites: [{ email: jane@acme.com, role: SUPPORT }]
   channels: [email, slack]
+  teams: [Fraud, Billing]            # if the workspace has no Teams yet — see below
 ```
 
 ---
@@ -170,7 +175,15 @@ payloads embed them — a name-based payload silently applies nothing.
 ## How to execute
 
 - **Resolve identities first.** Fetch `users(first: N) { edges { node { id publicName } } }` and map any
-  emails in the spec to real `u_…` IDs. `assign_to_user` with a machine user id returns SUCCESS and
+  emails in the spec to real `u_…` IDs. If the config routes to **teams**, resolve those too —
+  `teams(first: N) { edges { node { id name } } }` — because `assign_to_team` payloads embed a real
+  `team_…` id and a name-based payload silently applies nothing. **There is no verified team-creation
+  mutation**, so if a team in the spec doesn't exist, don't invent one: ask them to create it in
+  Settings → Teams now (it takes seconds and unblocks routing), or route to a named person instead and
+  put the team in `needsHumanClick`. Say which you're doing.
+- **"On-call rotation" is not a Plain primitive.** When someone asks for it, offer the three real options
+  and let them pick: `assign_to_team` on a team, an escalation path (an ordered list, not a rotating one),
+  or a fixed person they re-point when the rota changes. `assign_to_user` with a machine user id returns SUCCESS and
   assigns nobody — see reference. If an email doesn't match a workspace member, don't guess: move that
   assignment into `needsHumanClick` and say so.
 - **One thing at a time, narrated.** Say what you're creating, create it, confirm with the real ID. Group
@@ -180,6 +193,18 @@ payloads embed them — a name-based payload silently applies nothing.
 - **On failure:** say what failed, in plain language, with the real message. Then either fix and retry
   (validation errors usually tell you the fix), skip it and record it for the report, or ask — but never
   silently swallow it and never loop.
+- **Stop and confirm before anything destructive or public**, even if they've told you to stop asking:
+  - `syncBusinessHoursSlots` **replaces the entire slot set**. Read the current slots first; if any exist
+    and differ from the spec, show the difference and get an explicit yes. This is the one operation that
+    can quietly destroy existing configuration.
+  - A help centre with `type: PUBLIC` puts articles **on the public internet**. Read back the article
+    count and the URL and get a yes *before* the first `upsertHelpCenterArticle`, not after the last one.
+  - Unpublishing a live workflow to restructure it stops triage running until you republish. Say so.
+- **Re-running is not safe, and say so if they ask.** `createLabelType`, `createTier`,
+  `createServiceLevelAgreement` and `createWorkflow` all create rather than upsert, so a second run
+  duplicates them — and two published workflows on the same trigger both fire with no ordering guarantee.
+  Tenants and tenant/thread field schemas are upserts or key-collide safely. If something needs changing,
+  modify it; don't rebuild.
 - **Verify end state, not step status.** Some operations report success while doing nothing. After the
   triage workflow is published, create one test thread and read
   `workflowExecutions → stepExecutions[].output.matchedConditionIndex` to prove the branch fired and the
@@ -216,11 +241,15 @@ To modify an existing published workflow: unpublish (`isPublished: false`), rest
 - **Set personal notification preferences.** No mutation exists; per-user, avatar → Preferences.
 - **Place the chat widget snippet** on their own site.
 - **Disable Plain's built-in AI triage**, which labels *and* sets priority independently of your workflow.
-  Mitigate by creating labels with `excludeFromAi: true`; for priority, flag Settings → Agents.
+  Mitigate by creating labels with `isExcludedFromAi: true`; for priority, flag Settings → Agents.
 
 ## Output
 
-Return two things to whatever called you:
+Return two things — to whatever called you, or directly to the person if you were loaded standalone. Used
+directly, present it as a short readable summary in the conversation (a table of what exists now with its
+IDs, then the human to-do list); don't produce a machine-readable blob for a person, and don't build an
+HTML report unless they ask for one.
+
 
 1. **Built** — every object created, with its real ID, grouped by area. Machine-readable enough that a
    caller can render it (the onboarding skill turns this into an HTML report).

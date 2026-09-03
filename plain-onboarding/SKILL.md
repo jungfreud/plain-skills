@@ -79,7 +79,7 @@ version of this is making an already-sold person sit through a sell.
 > valuable signals in your business — so support shouldn't be an isolated team deflecting tickets, it
 > should be a core part of how you ship. Plain is the infrastructure for those conversations.
 >
-> In the next ten minutes you can have things like this running:
+> Here's the kind of thing you can have running by the end of this:
 > - AI triaging, routing, and answering questions straight from your docs — and if you don't have docs
 >   yet, Plain's help center can host them
 > - Sidekick posting a weekly digest of every feature request into a shared Slack channel for your
@@ -96,16 +96,53 @@ more to them than deflection, so weight labels and thread fields toward capturin
 Sentry one, they're engineering-led and probably want issue-tracker wiring early. Don't ask the whole
 interview as if you learned nothing from this.
 
+**Adapt the examples to their world before you send them.** That list is written for software companies,
+and it lands badly on anyone else — a consumer-hardware or e-commerce support lead reading "Sentry" and
+"PostHog" will reasonably ask whether this product is for them at all. If you know or can guess their
+industry, swap in equivalents: deflecting repeat "where's my order" questions with AI answering from their
+help centre, routing device faults straight to the hardware team, spotting a spike in one issue before it
+floods the queue, seeing which categories drag satisfaction down. Same machinery, their vocabulary.
+
+**Don't promise a number of minutes.** A focused setup on a small workspace runs 15–20 minutes; a
+migration with real data behind it runs an hour or more. If they ask how long, ask how much they want
+built and give an honest range — then, if they're short on time, offer the express path: labels, one
+triage workflow, knowledge sources and a channel, deferring tiers, SLAs, thread fields, saved views and
+the help centre to a second session. Say what you're deferring rather than quietly dropping it.
+
 Then set expectations once, in a sentence: *"I'll ask you how support works today, we'll design the
 workspace as we go, and at the end you'll create one API key and I'll build the whole thing."*
 
-Then, before designing anything, one quick qualifier: *"Quick check first — will you be able to create an
-API key in Plain, i.e. are you an admin on the workspace (or about to create it yourself)?"* If they can't,
-say so plainly now rather than designing a config they have no rights to apply — they'll need someone with
-admin access, though you can still design it with them and hand the plan over.
+### Before designing anything: find out where you are and what they have
 
-Also suggest, once: *"Worth keeping Plain open in another tab — when we get to the building part you'll see
-this appear in real time."*
+Ask this as your **second message**, in plain language, before a single design question. The answer
+changes the entire rest of the flow, and discovering it late has already cost a real session badly.
+
+> *"Two quick things so I set this up the right way: are you talking to me in a normal browser tab, or
+> through a coding tool on your computer like Claude Code or Cursor? And do you already have a Plain
+> workspace, or are we starting from nothing?"*
+
+**If they are in a browser-only chat** (claude.ai in a tab, no terminal): **you cannot build anything.**
+Applying configuration means sending requests to Plain's API, and you have no way to send them from here.
+Say so immediately, and never ask for an API key — a key you cannot use is worse than useless, because it
+ends up pasted into a chat log with admin rights on their workspace.
+
+What you do instead is still genuinely valuable: **run the whole design conversation, then guide them
+through building it in the Plain UI**, screen by screen, confirming as they go. Everything you'd have
+created over the API can be created by hand — Settings → Labels, Settings → Tiers, Settings → Business
+Hours, Settings → Workflows, Settings → Help Center. It's more clicking and it's slower, but it works,
+they stay in control, and no credential ever changes hands. Tell them that's the plan up front rather
+than letting them assume you're about to do it for them.
+
+**If they have no Plain workspace yet**, send them to sign up *now*, before you design anything:
+`https://app.plain.com/workspaces/create/` (skip the in-product tour — you cover the same ground). It
+takes a few minutes and it can happen while you're reading their site. Don't discover this at the key
+step, half an hour in.
+
+**If they do have a workspace**, one more: *"Are you an admin on it?"* If they aren't, they can't create a
+key — you can still design the whole thing with them and hand the plan to someone who can.
+
+Then, for terminal sessions only: *"Worth keeping Plain open in another tab — when we get to the building
+part you'll see this appear in real time."*
 
 **Then ask how they want to do this:**
 
@@ -115,17 +152,82 @@ this appear in real time."*
 
 None of these need an API key — that's the point. All three end with an agreed config.
 
-**Mode 1 — Migrate from an existing help desk.** Ask which tool (Zendesk, Help Scout, Intercom…) and
-whether they have an export or a URL. Infer categories, help center content, and team structure from it.
-Ask only what the export can't tell you — usually SLA targets, business hours, and who to invite. Don't
-re-ask what you already have.
+**Mode 1 — Migrate from an existing help desk.** The highest-stakes path, because they have a live
+support operation and a lot to lose. Take it seriously.
+
+**Open by saying what you will not touch**, before anything else — it's the first thing they're worried
+about, and they'll be relieved you raised it:
+
+> *"Nothing I do touches your current help desk. I only read an export you already have on disk — I have
+> no credentials to it and won't ask for any. Everything I create goes into Plain."*
+
+Ask for the export (a directory, a zip, or a URL). **Read what's actually there before proposing
+anything** — don't ask which tool it is if they've already told you.
+
+**What maps across, roughly:**
+
+| In their export | Becomes in Plain |
+|---|---|
+| Tags / ticket categories | Label types — expect sprawl; ask which are real and which are dead |
+| Groups / teams | Teams — but see the teams caveat below |
+| SLA policies | Tiers + SLA records |
+| Ticket fields / custom fields | Thread fields |
+| Organizations / companies / accounts | Tenants, with tenant fields |
+| Help centre articles | Help centre articles (mind the scale rule) |
+| Macros / saved replies / canned responses | Snippets |
+| Triggers / automations / rules | Rebuilt as one triage workflow — they don't port |
+| Agents / users | **Invites are a human task.** You cannot invite anyone. |
+
+**State the "does not migrate" list out loud, early, before they've committed** — not when they trip over
+it. The big one is **historical tickets**: there is no bulk ticket import, so their ticket history,
+attachments, internal notes and audit trail stay in the old tool. Most teams keep the old instance on a
+read-only or cheap plan for their retention period, and for anyone regulated that's a compliance decision
+rather than a support one, so tell them to check with whoever owns retention before cancelling anything.
+Also not migrating: the *action* half of macros (auto-assign, auto-status — only the text comes across),
+template variables from the old tool (they won't resolve, and you must never silently mangle them), and
+per-team business hours (Plain has one set per workspace).
+
+**Macros deserve care.** Saved-reply text is often compliance-reviewed and legally reviewed. Migrate it
+**verbatim** — never paraphrase or tidy it. Where a macro contains old-tool placeholders like
+`{{ticket.requester.first_name}}`, surface those to the user with their exact text and let them decide
+per macro; don't blank them and don't guess a Plain equivalent.
+
+Then ask only what the export can't tell you: SLA targets and whether they're business-hours-only, support
+hours and timezone, which tags are real, and who to invite.
 
 **Mode 2 — Research and propose.** Ask for their company site and docs URL (one message, wait). Fetch and
-read both silently. Come back with **one consolidated proposal** — the label types you'd create based on
-their product, a tier structure, a help center migration plan if you found docs, Ari knowledge sources
-pointed at what you found — then a *short* list of what you genuinely can't infer (support hours and
-timezone, SLA targets, team emails). This is the fast path; don't re-derive by interview what research
-already answered.
+read both silently. Come back with **one consolidated proposal** — label types, a tier structure, Ari
+knowledge sources pointed at what you found, and a help centre recommendation (see the scale rule below) —
+then a *short* list of what you genuinely can't infer. This is the fast path; don't re-derive by interview
+what research already answered.
+
+**Know what research is good at and what it lies about.** Pricing and plan pages are real data: tier
+names, prices and support entitlements come out accurate and specific, and that's the hardest part to
+guess. A **documentation navigation is not a ticket taxonomy** — docs are organised by product surface,
+tickets by failure mode. Proposing their docs sections as labels reliably misses the categories that
+actually generate volume (account and project state, abuse and compliance, migrations from a competitor,
+shipping and returns), because none of those get a docs section. Use the docs for vocabulary, then ask.
+
+So always ask these three, no matter how good the research looked — research cannot answer them:
+
+1. *"What's a ticket actually about for you — an account, a project, a device, an order? And what do you
+   need on every ticket to action it?"* This is the entity model, it's almost never on a public site, and
+   getting it wrong makes every thread field useless. It also decides whether a tenant is their company
+   or something smaller.
+2. *"Roughly how many tickets a week, and does every customer segment reach you here?"* A design for 50 a
+   week and 5,000 a week differ a lot, and plenty of companies send free-tier users to a community forum
+   that will never touch Plain — building them a tier with an SLA would be fiction.
+3. *"What are the top three things people actually write in about?"* Their answer will not match the docs
+   nav, and their answer is the one that's right.
+
+**A help centre is not automatically the right answer.** If they already have docs, ask one question
+before proposing anything: *"Do you want Plain hosting a copy of your docs, or just the AI answering from
+the site you already have?"* Fetch their sitemap and count it first. Under roughly 100 pages a migration
+is reasonable. Above that — or if the docs are version-controlled, generated, or actively maintained
+elsewhere — recommend an **empty help centre plus a sitemap knowledge source**, and say why: migrating
+forks their documentation away from the repo that owns it, and the copy goes stale the day it's created.
+Watch for generated reference sections (`/reference/`, per-language SDK trees) which can dominate a crawl
+and skew the AI's answers; narrower sources beat one enormous one.
 
 **Mode 3 — Walk through it together.** The interview below, one question at a time, value narrated after
 each answer.
@@ -157,22 +259,38 @@ Then, and only then, the key instructions. Two turns, not four:
    the same ground.) Wait.
 2. *"Does that screen offer an Admin or role preset?"*
    - Yes → *"Pick that — covers everything we need, and we'll delete this key when we're done anyway."*
-   - No / searchable picker → give the search terms **a few at a time**: *"Search `tier`,
-     `serviceLevelAgreement`, `businessHours` and check what comes up"* → then `labelType`, `label`,
-     `suggestedLabelType` → `tenantFieldSchema`, `tenant` → `threadFieldSchema`, `threadField`,
-     `escalationPath` → `workflow`, `savedThreadsView`, `helpCenter` → `knowledgeSource`, `sidekick`,
-     `webhookTarget` → `roles`, `permission`. (Add `customerGroup`, `machineUser`/`apiKey` only if this
-     workspace needs them.) If the back-and-forth is annoying them, offer the whole list in one block —
-     speed over ceremony.
+   - No / searchable picker → **give them the whole list in one message.** Nobody wants six rounds of
+     ping-pong on a checkbox screen:
+
+     > `tier`, `serviceLevelAgreement`, `businessHours`, `labelType`, `label`, `suggestedLabelType`,
+     > `tenantFieldSchema`, `tenant`, `threadFieldSchema`, `threadField`, `escalationPath`,
+     > `workflowRule`, `savedThreadsView`, `helpCenter`, `helpCenterArticle`, `helpCenterArticleGroup`,
+     > `knowledgeSource`, `sidekick`, `webhookTarget`, `snippet`, `thread`, `customer`, `roles`, `permission`
+
+     Tell them two things up front so they don't go hunting: **there is no `workflow` scope** — it's
+     `workflowRule` — and `helpCenterArticle` / `helpCenterArticleGroup` are separate from `helpCenter`,
+     so missing those means every article fails.
+   - **If they object to an Admin key on a production workspace, they're right to.** Don't push the preset.
+     Give them the scoped list and state the trade plainly: a few minutes of ticking now, against a key
+     that can publish public content and rewrite their triage.
    Then: *"Save the key — it only shows once. Don't paste it to me though, one more step first."*
 
-**Getting the key to you without it ever being typed into the chat.** Ask now — not earlier — whether
-they're in a terminal-capable session (Claude Code, Codex, Cursor) or a browser-only chat:
-- **Terminal:** *"Set it as an environment variable yourself, outside anything I run — open a terminal and
-  run `echo 'export PLAIN_SETUP_KEY="plainApiKey_xxx"' >> ~/.zshrc && source ~/.zshrc` with your real key
-  swapped in. Then just tell me it's set — I'll reference `$PLAIN_SETUP_KEY` and never need to see it."*
-- **Browser-only chat:** say plainly there's no way to keep a pasted key out of the transcript here. Have
-  them scope it narrowly and delete or rotate it the moment you're done.
+**Getting the key to you without it ever being typed into the chat.** You established back at the start
+that they have a terminal — if it turns out they don't, stop here and switch to the UI-guided path rather
+than asking for a key you can't use.
+*"Put it in a file only you can read and I'll load it per command — it never touches this conversation,
+and it never lands in a dotfile you might commit:"*
+
+```bash
+printf 'export PLAIN_SETUP_KEY="plainApiKey_xxx"\n' > ~/.plain-setup.env && chmod 600 ~/.plain-setup.env
+```
+
+*"Then just tell me it's set."* From there, prefix every call with `source ~/.plain-setup.env && …`.
+
+**Do not tell them to append it to `~/.zshrc`.** Any competent engineer will refuse, for two good reasons:
+it writes a temporary credential permanently into a file people commit to dotfiles repos, and sourcing it
+in *their* shell doesn't populate the environment of the shell *you* spawn, so it frequently doesn't even
+work. Deleting `~/.plain-setup.env` goes on the Phase 3 cleanup list next to deleting the machine user.
 
 Never echo, print, log, or repeat the key's value — not even to confirm you have it. `myWorkspace` and
 `myPermissions` returning successfully is all the proof you need.
@@ -322,7 +440,5 @@ A few rules that matter enough to repeat here:
   and any OAuth-based MCP server such as Sentry. If they picked a Slack- or OAuth-dependent use case as
   their priority, say up front that it needs one browser click from them at the end, and make sure you
   actually walk them through that click rather than filing it in the report.
-- `Workflow.trigger` and `WorkflowRule.payload` are opaque JSON strings whose exact shape isn't documented.
-  Don't guess: build one workflow in the Plain UI with them, read it back via the `workflow` query to learn
-  the shape, then template from it. If that's too slow for the session, leave workflows for the report and
-  say so.
+- Build workflows from the reference's §8, which gives the trigger and step payload shapes. If a payload
+  type you need isn't listed there, don't invent one — say so and leave that step out.
