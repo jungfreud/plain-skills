@@ -31,11 +31,11 @@ information. Look, then answer.
 
 Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
 
-**Plain also publishes an official agent skill** (`npx skills add team-plain/plain-support`, documented at
-`https://www.plain.com/docs/agents/agent-skill`) for reading customers, threads and timelines and drafting
-help-centre content. That's the day-to-day support-data skill; this one configures the workspace. If
-someone asks for something that's really the other job — "summarise this customer's history", "what are
-our open threads" — point them at it rather than improvising.
+**There's a companion skill for working with support data** — the Plain Support Skill
+(`npx skills add team-plain/plain-support`) reads customers, threads and timelines and drafts help-centre
+content. This one configures the workspace. If someone asks for something that's really the other job —
+"summarise this customer's history", "what are our open threads" — point them there rather than
+improvising.
 
 ## Auth and scopes
 

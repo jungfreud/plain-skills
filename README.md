@@ -26,22 +26,18 @@ validates more strictly than the schema suggests.
 Plain's API for one specific outcome — configure a workspace, or pull insights out of one — so you get it
 right first time and finish in one sitting.
 
-## Relationship to Plain's official Support Skill
+## How these fit with the Plain Support Skill
 
-Plain publishes an official agent skill — [`team-plain/skills`](https://github.com/team-plain/skills),
-documented at [plain.com/docs/agents/agent-skill](https://www.plain.com/docs/agents/agent-skill):
+Plain's [Support Skill](https://www.plain.com/docs/agents/agent-skill) covers working *with* your support
+data — reading customers, threads and timelines, drafting help-centre content:
 
 ```bash
 npx skills add team-plain/plain-support
 ```
 
-**That one is for working with support data; these are for configuring the workspace.** The official skill
-lets your agent read customers, threads and timelines, and draft help-centre content — the day-to-day
-"help me investigate this customer" work. These skills cover the other half: setting the workspace up and
-changing how it behaves. They use the same `PLAIN_API_KEY` environment variable, so if you've installed
-the official skill you're already set up for these.
-
-If you only want one, start with the official one — it's supported by Plain.
+These cover the other half: **setting your workspace up and changing how it behaves.** Same
+`PLAIN_API_KEY`, same install path, same conventions — install either or both depending on whether you're
+investigating support or configuring it.
 
 ## Who it's for
 
@@ -126,7 +122,7 @@ printf 'export PLAIN_API_KEY="plainApiKey_xxx"\n' > ~/.plain-setup.env && chmod 
 ```
 
 Then just tell your agent it's set. The skills reference the variable and never read or print its value,
-so the secret stays out of your conversation history. Like Plain's official skill, these assume `curl` and
+so the secret stays out of your conversation history. Like the Support Skill, these assume `curl` and
 `jq` are available. Don't append it to `~/.zshrc` — that writes a
 temporary credential into a file people commit to dotfiles repos.
 
