@@ -39,6 +39,20 @@ check() {
 echo "Plain API smoke test"
 echo
 
+echo "Documentation endpoints the skills depend on"
+for u in "https://www.plain.com/docs/product/what-is-plain.md" \
+         "https://www.plain.com/docs/llms.txt" \
+         "https://www.plain.com/docs/graphql-reference/mutations/createTier.md" \
+         "https://core-api.uk.plain.com/graphql/v1/schema.graphql"; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$u")
+  if [ "$code" = "200" ]; then
+    printf '  ok    %s\n' "$u"; PASS=$((PASS+1))
+  else
+    printf '  FAIL  %s (HTTP %s)\n' "$u" "$code"; FAIL=$((FAIL+1))
+  fi
+done
+echo
+
 echo "Connectivity and permissions"
 check "myWorkspace returns a workspace" \
   'query { myWorkspace { id name } }' '.data.myWorkspace.id'
@@ -90,7 +104,7 @@ echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || {
   echo
-  echo "A failure usually means the API changed and reference/graphql-reference.md is now wrong."
-  echo "Please open an issue with the error above."
+  echo "A failure means either the API changed shape or a documentation endpoint the skills"
+  echo "rely on has moved. Please open an issue with the error above."
   exit 1
 }

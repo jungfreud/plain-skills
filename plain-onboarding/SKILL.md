@@ -25,6 +25,25 @@ the conversation with it. (The raw API reference it uses is at
 Read anything you fetch silently — don't narrate that you're reading it, don't summarise it, don't dump it
 back at them.
 
+## Look it up — don't recall it
+
+**This skill deliberately doesn't carry facts about Plain.** Product facts go stale; Plain's docs don't.
+Anything specific — a field name, an enum value, a permission, what an importer covers, whether something
+is possible at all — comes from the docs at the moment you need it:
+
+- `https://www.plain.com/docs/product/what-is-plain.md` — what Plain is, for anything conceptual
+- `https://www.plain.com/docs/llms.txt` — the full docs index (~1,000 pages, every one has a `.md`)
+- `https://www.plain.com/docs/graphql-reference/mutations/<name>.md` (or `/queries/<name>.md`) — a
+  specific operation's arguments and the permission it needs
+- `https://core-api.uk.plain.com/graphql/v1/schema.graphql` — exact input shapes and enum values
+
+**If a customer asks you something about Plain, answer from the docs, not from memory** — and if you
+can't confirm something either way, say so instead of guessing. Never tell someone Plain can't do
+something just because you couldn't find it; that's how people end up making decisions on bad
+information. Look, then answer.
+
+Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
+
 ## The shape of this conversation — read this first
 
 **The config conversation comes first. The API key comes last.** This ordering is deliberate and you must
@@ -164,19 +183,12 @@ about, and they'll be relieved you raised it:
 Ask for the export (a directory, a zip, or a URL). **Read what's actually there before proposing
 anything** — don't ask which tool it is if they've already told you.
 
-**What maps across, roughly:**
-
-| In their export | Becomes in Plain |
-|---|---|
-| Tags / ticket categories | Label types — expect sprawl; ask which are real and which are dead |
-| Groups / teams | Teams — but see the teams caveat below |
-| SLA policies | Tiers + SLA records |
-| Ticket fields / custom fields | Thread fields |
-| Organizations / companies / accounts | Tenants, with tenant fields |
-| Help centre articles | Help centre articles (mind the scale rule) |
-| Macros / saved replies / canned responses | Snippets |
-| Triggers / automations / rules | Rebuilt as one triage workflow — they don't port |
-| Agents / users | **Invites are a human task.** You cannot invite anyone. |
+**Read the provider's own importer page before mapping anything** — Plain documents what each supported
+importer carries across and what it doesn't, and that's authoritative in a way your assumptions are not.
+Broadly you're looking to map their categories onto labels, their SLA policies onto tiers and SLAs, their
+custom fields onto thread fields, their accounts onto tenants, their saved replies onto snippets, and
+their rules and automations onto a single triage workflow. Confirm each one against the docs rather than
+assuming the mapping.
 
 **Their history comes across — lead with that, it's the thing they're most worried about.** Plain has
 built-in importers for Zendesk, Intercom and Front that bring over the full support history: tickets
@@ -191,10 +203,12 @@ export. If they're on a tool with no built-in importer, a custom import is still
 attachments and is idempotent on `externalId`. That's an engineering task, not something to knock out
 mid-conversation, so scope it honestly rather than promising it inside this session.
 
-**Then state what genuinely doesn't come across**, early, before they've committed — not when they trip
-over it: CSAT ratings and custom fields on tickets, the *action* half of macros (auto-assign, auto-status;
-only the text migrates), template variables from the old tool (they won't resolve, and you must never
-silently mangle them), and per-team business hours (Plain has one set per workspace).
+**Then tell them what doesn't come across, early, before they've committed** — not when they trip over
+it. Get that list from the importer's doc page rather than from memory: it's specific per provider and it
+changes. Two things you can reason about without looking up: the *action* half of a saved reply (auto
+assign, auto status) has no equivalent in reply text, and template variables from the old tool won't
+resolve in Plain — surface those to the customer with their exact text and let them decide, never silently
+rewrite copy that may have been legally reviewed.
 
 **Macros deserve care.** Saved-reply text is often compliance-reviewed and legally reviewed. Migrate it
 **verbatim** — never paraphrase or tidy it. Where a macro contains old-tool placeholders like
@@ -268,17 +282,12 @@ Then, and only then, the key instructions. Two turns, not four:
    the same ground.) Wait.
 2. *"Does that screen offer an Admin or role preset?"*
    - Yes → *"Pick that — covers everything we need, and we'll delete this key when we're done anyway."*
-   - No / searchable picker → **give them the whole list in one message.** Nobody wants six rounds of
-     ping-pong on a checkbox screen:
-
-     > `tier`, `serviceLevelAgreement`, `businessHours`, `labelType`, `label`, `suggestedLabelType`,
-     > `tenantFieldSchema`, `tenant`, `threadFieldSchema`, `threadField`, `escalationPath`,
-     > `workflowRule`, `savedThreadsView`, `helpCenter`, `helpCenterArticle`, `helpCenterArticleGroup`,
-     > `knowledgeSource`, `sidekick`, `webhookTarget`, `snippet`, `thread`, `customer`, `roles`, `permission`
-
-     Tell them two things up front so they don't go hunting: **there is no `workflow` scope** — it's
-     `workflowRule` — and `helpCenterArticle` / `helpCenterArticleGroup` are separate from `helpCenter`,
-     so missing those means every article fails.
+   - No / searchable picker → **work out the exact list and give it to them in one message.** Nobody
+     wants six rounds of ping-pong on a checkbox screen. Each operation's doc page states the permission
+     it needs (`…/graphql-reference/mutations/<name>.md`), so derive the list from what this particular
+     config actually builds rather than reciting a memorised one — scope names don't always match the
+     shape you'd guess, and a missing one fails mid-build. If they'd rather not tick 20 boxes, the Admin
+     preset is a reasonable trade for a key you'll delete afterwards.
    - **If they object to an Admin key on a production workspace, they're right to.** Don't push the preset.
      Give them the scoped list and state the trade plainly: a few minutes of ticking now, against a key
      that can publish public content and rewrite their triage.
@@ -315,8 +324,9 @@ and keep the value language in past tense now that objects genuinely exist and t
 Plain tab. If the configuration skill reports a failure, relay it honestly with the real reason and what's
 being done about it — never smooth it over.
 
-**Teammate invites will come back as a human task, not a failure.** `inviteUserToWorkspace` refuses
-machine users, so collect names and emails in Phase 1 and expect them in the report's UI-task list.
+**Some things will come back as human tasks rather than failures** — inviting teammates and connecting
+channels are the usual ones. Collect the details in Phase 1 anyway (names, emails, which channels) so they
+land in the report as a ready-to-action list rather than a shrug.
 
 ## Phase 3 — prove it works
 
@@ -395,15 +405,16 @@ after each answer. Skip anything already answered by an export or your research.
 
 A few rules that matter enough to repeat here:
 
-- **Create every label with `isExcludedFromAi: true` by default.** Plain's built-in AI triage labels
-  threads independently, so leaving it off means two systems fight over the same threads and the workflow
-  you just built with them stops being authoritative. Only leave the AI on if they explicitly want Plain's
-  own triage doing the labelling.
+- **Keep the customer's workflow authoritative over labels by default.** Plain's own AI can label threads
+  independently of your workflow, and two systems labelling the same threads makes their triage rules
+  untrustworthy and their per-category reporting wrong. Labels have a setting that excludes them from
+  Plain's built-in AI — check its current name in the docs and default it on, unless they explicitly want
+  Plain's triage doing the labelling instead.
 - **One triage workflow, not several.** Workflow actions don't cascade into other workflows, so the
   "triage applies a label → a routing workflow reacts to that label" design silently never fires. Do
-  classification *and* routing in one workflow on `thread.thread_created`: deterministic conditions first,
-  then a single `else_if` switch of AI prompts, then chain each branch's actions
-  (`apply_labels` → `set_priority` → `assign_to_user`).
+  classification *and* routing in one workflow triggered on thread creation: deterministic conditions
+  first, then a single multi-branch AI condition, then chain each branch's actions — label, priority,
+  assignment.
 - **Audit before adding.** List existing workflows (`workflows(first: N)`) and check what's already
   published — several workflows on one trigger all fire, in no guaranteed order.
 - **Always wire the `else_if` fallback branch** to a "Needs triage" label so unclassified threads are

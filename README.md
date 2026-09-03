@@ -18,9 +18,9 @@
 tiers, SLAs, labels, routing, the AI agents, the help center — is a first-class object in a GraphQL API
 rather than something buried in a settings screen. Anything you can do in the app, you can do over the API.
 
-That's powerful, and it's also a lot to take in: the schema runs to roughly 440 mutations. If you point an
-agent at it cold, it has to work out which handful of operations matter, what order they depend on, and
-which inputs the schema describes differently to how the API actually validates them.
+That's powerful, and it's also a lot to take in. The schema is large, and if you point an agent at it cold
+it has to work out which handful of operations matter, what order they depend on, and which inputs the API
+validates more strictly than the schema suggests.
 
 **These skills are that shortcut.** Each one is a single Markdown file that teaches an agent how to use
 Plain's API for one specific outcome — configure a workspace, or pull insights out of one — so you get it
@@ -31,8 +31,8 @@ right first time and finish in one sitting.
 - **New to Plain** and you'd rather your agent set the workspace up than click through settings.
 - **Already on Plain** and you want to change how triage, routing or SLAs work without hunting through
   docs.
-- **A developer** integrating with Plain's API, agent or not. The reference is a curated path through the
-  schema and stands on its own.
+- **A developer** integrating with Plain's API, agent or not. The reference is a working method for the
+  API — where to look things up and how to avoid the common traps — and stands on its own.
 
 You don't need to know the GraphQL API, and you don't need to install anything.
 
@@ -98,43 +98,46 @@ npx skills add jungfreud/plain-skills
 ## Your API key
 
 You'll need a Plain workspace and an API key: **Settings → Machine Users → Add API key**. The Admin preset
-covers everything; if you'd rather scope it tightly, the exact permissions are listed in the
-[reference](./reference/graphql-reference.md).
+is the simplest choice for a one-off setup key; your agent can also work out the narrower set of
+permissions a given configuration actually needs, since every operation's doc page states its own.
 
-**Don't paste the key into the chat.** Set it as an environment variable yourself:
+**Don't paste the key into the chat.** Put it in a file only you can read, and your agent will load it per
+command:
 
 ```bash
-echo 'export PLAIN_SETUP_KEY="plainApiKey_xxx"' >> ~/.zshrc && source ~/.zshrc
+printf 'export PLAIN_SETUP_KEY="plainApiKey_xxx"\n' > ~/.plain-setup.env && chmod 600 ~/.plain-setup.env
 ```
 
-Then just tell your agent it's set. The skills reference `$PLAIN_SETUP_KEY` and never read or print its
-value, so the secret stays out of your conversation history.
+Then just tell your agent it's set. The skills reference the variable and never read or print its value,
+so the secret stays out of your conversation history. Don't append it to `~/.zshrc` — that writes a
+temporary credential into a file people commit to dotfiles repos.
 
-When you're done, delete the machine user or narrow the key — a setup key can create tiers and publish
-public help center content.
+When you're done, delete the machine user (and the env file). A setup key can change your configuration
+and publish public content.
 
-For **plain-insights**, a read-only key is enough (`metrics:read`, `metricsAgent:read`, `thread:read`,
-`labelType:read`, `tier:read`, `user:read`, `permission:read`), which is a safer thing to hand an agent.
+**plain-insights needs only read access**, which is a much safer thing to hand an agent — it can't change
+anything.
 
 ## The reference
 
-[`reference/graphql-reference.md`](./reference/graphql-reference.md) is the curated path through the API:
-the ~30 mutations that matter for configuring a workspace, with their exact input shapes, the dependency
-order, and the behaviours you'd otherwise find the hard way. For example:
+[`reference/graphql-reference.md`](./reference/graphql-reference.md) is a method guide, not a fact sheet.
+It deliberately contains almost no specifics about Plain — those live in
+[Plain's docs](https://www.plain.com/docs), which are always current, and the skills are written to look
+them up at the moment they're needed rather than recall them.
 
-- A workflow's SLA first-response and next-response targets are mutually exclusive — you need two records
-- `inviteUserToWorkspace` can't be used by machine users, so invites are always a human step
-- Workflow actions don't cascade into other workflows, which changes how you structure triage and routing
-- `assign_to_user` given a machine-user ID reports success and assigns nobody
-- Label icons are slugs, not emoji; `DateTime` is an object, not a scalar
+What the reference does give you: where the authoritative sources are and how to query them, the order
+things depend on each other, how to handle errors and verify that a change actually landed, and the
+architecture of a good triage setup — one workflow on thread creation, cheap deterministic checks before
+expensive AI ones, a single multi-branch classifier, always a fallback, always tested against real
+threads.
 
-It also lays out the recommended triage architecture: one workflow on thread creation, cheap deterministic
-conditions first, then a single `else_if` switch of AI prompt conditions — an N-way switch that stops at
-the first match — with each branch chaining its own label, priority and assignment actions.
+That split is deliberate. A skill that memorises an API is wrong within a release; a skill that knows
+where to look stays right.
 
 ## Verify it still holds
 
-`tests/smoke.sh` is a read-only check that the API still behaves the way the reference describes.
+`tests/smoke.sh` is a read-only check that the API and the documentation endpoints the skills rely on are
+reachable and behaving.
 
 ```bash
 PLAIN_SETUP_KEY=plainApiKey_xxx ./tests/smoke.sh

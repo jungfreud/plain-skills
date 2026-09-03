@@ -29,6 +29,25 @@ if something isn't there, fetch the official per-operation doc at
 `https://www.plain.com/docs/graphql-reference/mutations/<name>.md`, which also states the permission
 required.
 
+## Look it up — don't recall it
+
+**This skill deliberately doesn't carry facts about Plain.** Product facts go stale; Plain's docs don't.
+Anything specific — a field name, an enum value, a permission, what an importer covers, whether something
+is possible at all — comes from the docs at the moment you need it:
+
+- `https://www.plain.com/docs/product/what-is-plain.md` — what Plain is, for anything conceptual
+- `https://www.plain.com/docs/llms.txt` — the full docs index (~1,000 pages, every one has a `.md`)
+- `https://www.plain.com/docs/graphql-reference/mutations/<name>.md` (or `/queries/<name>.md`) — a
+  specific operation's arguments and the permission it needs
+- `https://core-api.uk.plain.com/graphql/v1/schema.graphql` — exact input shapes and enum values
+
+**If a customer asks you something about Plain, answer from the docs, not from memory** — and if you
+can't confirm something either way, say so instead of guessing. Never tell someone Plain can't do
+something just because you couldn't find it; that's how people end up making decisions on bad
+information. Look, then answer.
+
+Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
+
 ## Endpoint and auth
 
 `POST https://core-api.uk.plain.com/graphql/v1` with
@@ -58,7 +77,7 @@ labels:                              # → createLabelType
     icon: credit-card                # slug, NOT emoji
     color: "#22C55E"
     externalId: billing
-    isExcludedFromAi: true           # DEFAULT TRUE — see reference §4
+    excludedFromPlainAi: true        # default TRUE — keep your workflow authoritative
 
 tiers:                               # → createTier, then createServiceLevelAgreement per SLA
   - name: Enterprise
@@ -81,7 +100,7 @@ businessHours:                       # → syncBusinessHoursSlots (replaces the 
 threadFields:                        # → createThreadFieldSchema
   - label: Resolution reason
     key: resolution_reason           # ^[a-z0-9_]+$, immutable
-    type: ENUM                       # STRING | BOOL | ENUM | NUMBER | CURRENCY | DATE
+    type: enum                       # map to Plain's field types — check the schema for current values
     enumValues: [fixed, wontfix, duplicate, user_error]
     required: false
     aiAutoFill: true
@@ -90,16 +109,16 @@ threadFields:                        # → createThreadFieldSchema
 tenantFields:                        # → upsertTenantFieldSchema
   - externalFieldId: arr
     label: ARR
-    type: NUMBER_TYPE                # STRING_TYPE | NUMBER_TYPE | BOOLEAN_TYPE | STRING_ARRAY | DATETIME_TYPE | USER_REFERENCE_TYPE
+    type: number                     # map to Plain's field types — check the schema for current values
 
 escalationPaths:                     # → createEscalationPath
   - name: Billing escalation
     steps:
-      - { type: USER, user: "jane@acme.com" }      # resolve to u_… ; NOT machine users
-      - { type: LABEL_TYPE, label: Billing }
+      - { type: user, user: "jane@acme.com" }     # resolve emails to real user IDs first
+      - { type: label, label: Billing }
 
 triage:                              # ONE workflow. See reference §8e before changing this shape.
-  trigger: thread_created            # thread_created | labels_changed | status_transitioned | schedule
+  trigger: thread_created            # confirm valid trigger types in the workflow docs
   cron: null                         # only when trigger: schedule
   preFilters: []                     # deterministic conditions first — cheap and instant
   classify:                          # else_if branches, evaluated IN ORDER, first match wins
@@ -146,7 +165,7 @@ sidekick:
 
 webhooks:                            # → createWebhookTarget
   - url: "https://acme.com/plain-webhook"
-    events: [thread.thread_created]  # webhook event names ≠ workflow event names
+    events: [...]                    # get valid values from the subscriptionEventTypes query
 
 tenants:                             # → upsertTenant + upsertTenantField
   - { name: Acme Inc, externalId: acme-inc, fields: { arr: 48000 }, tier: enterprise }
@@ -175,17 +194,17 @@ payloads embed them — a name-based payload silently applies nothing.
 ## How to execute
 
 - **Resolve identities first.** Fetch `users(first: N) { edges { node { id publicName } } }` and map any
-  emails in the spec to real `u_…` IDs. If the config routes to **teams**, resolve those too —
-  `teams(first: N) { edges { node { id name } } }` — because `assign_to_team` payloads embed a real
-  `team_…` id and a name-based payload silently applies nothing. **There is no verified team-creation
+  emails in the spec to real user IDs. If the config routes to teams, resolve those too via the `teams`
+  query — assignment payloads embed real IDs, and a name where an ID belongs is often accepted and then
+  silently does nothing. **There is no verified team-creation
   mutation**, so if a team in the spec doesn't exist, don't invent one: ask them to create it in
   Settings → Teams now (it takes seconds and unblocks routing), or route to a named person instead and
   put the team in `needsHumanClick`. Say which you're doing.
-- **"On-call rotation" is not a Plain primitive.** When someone asks for it, offer the three real options
-  and let them pick: `assign_to_team` on a team, an escalation path (an ordered list, not a rotating one),
-  or a fixed person they re-point when the rota changes. `assign_to_user` with a machine user id returns SUCCESS and
-  assigns nobody — see reference. If an email doesn't match a workspace member, don't guess: move that
-  assignment into `needsHumanClick` and say so.
+- **Check how Plain models on-call rotation before promising it** — it's one of the most common requests
+  and the answer isn't obvious. Look at what assignment targets exist (teams, escalation paths, individual
+  users), then offer the real options and let them pick rather than picking silently. `assign_to_user` with a machine user id returns SUCCESS and
+  If an email doesn't match a workspace member, don't guess — move that assignment into
+  `needsHumanClick` and say so.
 - **One thing at a time, narrated.** Say what you're creating, create it, confirm with the real ID. Group
   only trivially-related items (a batch of labels). Never fire ten mutations and report once.
 - **Check `error` on every mutation** before treating it as success — `error { message code fields { field message } }`. The
@@ -216,7 +235,7 @@ The single most error-prone part. Full detail in reference §8, but the shape:
 
 1. `createWorkflow` with the JSON trigger — this creates an **inactive draft**.
 2. Create the **terminal action steps first** (leaf-first), because `transitions` needs real step IDs.
-   Chain each branch's actions: `apply_labels` → `set_priority` → `assign_to_user`.
+   Chain each branch's actions: label, then priority, then assignment.
 3. Create the **`else_if` classify step** with one prompt per branch and
    `transitions: [branch1, branch2, …, fallback]` — N conditions, N+1 transitions.
 4. Any deterministic pre-filters go *above* the classify step, pointing at it on the true branch.
@@ -231,17 +250,21 @@ than stacking another on top.
 To modify an existing published workflow: unpublish (`isPublished: false`), restructure, republish.
 `startStepId` can't be cleared while published.
 
-## What you cannot do — always report these
+## What needs a human, and how to be sure
 
-- **Invite teammates.** `inviteUserToWorkspace` refuses machine users outright. Collect them into the
-  report as a UI task (Settings → Members). `assignRolesToUser` on an existing user does work.
-- **Complete channel OAuth** (Slack, MS Teams, Discord, email forwarding) or OAuth MCP servers. You can
-  provision shells; consent needs a browser. **Support is not live until a channel is connected** — say
-  so plainly rather than letting someone believe they're taking tickets.
-- **Set personal notification preferences.** No mutation exists; per-user, avatar → Preferences.
-- **Place the chat widget snippet** on their own site.
-- **Disable Plain's built-in AI triage**, which labels *and* sets priority independently of your workflow.
-  Mitigate by creating labels with `isExcludedFromAi: true`; for priority, flag Settings → Agents.
+Some things genuinely require a person in a browser rather than an API key — OAuth consent for channels
+and connectors, DNS verification, and operations that need a real logged-in user rather than a machine
+one. When you hit one, name the exact settings page and, if there's time left, walk them through it
+rather than filing it in a report.
+
+**Be careful how you state a limitation.** If a call is refused, quote the actual error. If you simply
+can't find a capability, check the docs index and the operation's doc page before concluding anything —
+and if you still can't confirm it either way, say *"I couldn't confirm this, it's worth checking with
+Plain"* rather than telling a customer their product can't do something. A wrong "that's impossible"
+travels further than a wrong field name: people cancel contracts and abandon migrations over it.
+
+One thing worth saying plainly at the end regardless: **support isn't live until an inbound channel is
+connected.** A fully configured workspace with no channel receives nothing.
 
 ## Output
 

@@ -12,91 +12,84 @@ copy-paste prompt that invokes the configuration skill, and the person decides w
 That handoff is the whole point. Analytics that stops at a chart makes someone else do the thinking;
 this ends with *"here's the fix, paste this."*
 
+## Look it up — don't recall it
+
+**This skill deliberately doesn't carry facts about Plain.** Product facts go stale; Plain's docs don't.
+Anything specific — a field name, an enum value, a permission, what an importer covers, whether something
+is possible at all — comes from the docs at the moment you need it:
+
+- `https://www.plain.com/docs/product/what-is-plain.md` — what Plain is, for anything conceptual
+- `https://www.plain.com/docs/llms.txt` — the full docs index (~1,000 pages, every one has a `.md`)
+- `https://www.plain.com/docs/graphql-reference/mutations/<name>.md` (or `/queries/<name>.md`) — a
+  specific operation's arguments and the permission it needs
+- `https://core-api.uk.plain.com/graphql/v1/schema.graphql` — exact input shapes and enum values
+
+**If a customer asks you something about Plain, answer from the docs, not from memory** — and if you
+can't confirm something either way, say so instead of guessing. Never tell someone Plain can't do
+something just because you couldn't find it; that's how people end up making decisions on bad
+information. Look, then answer.
+
+Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
+
 ## Auth and scopes
 
-`POST https://core-api.uk.plain.com/graphql/v1` with `Authorization: Bearer $PLAIN_INSIGHTS_KEY`
-(or `$PLAIN_SETUP_KEY` if that's what they have) and `Content-Type: application/json`.
+`POST https://core-api.uk.plain.com/graphql/v1` with `Authorization: Bearer $PLAIN_INSIGHTS_KEY` (or
+whichever variable they've set) and `Content-Type: application/json`. Never read, print or echo the key.
 
-You only need **read** scopes: `metrics:read`, `metricsAgent:read` (required for any assignee or agent
-breakdown), `thread:read`, `labelType:read`, `tier:read`, `user:read`, `permission:read`. Say so — people
-are rightly cautious handing an agent a key, and this one can't change anything.
+**You need only read permissions**, which is worth saying out loud — people are rightly cautious handing
+an agent a key, and this one cannot change anything. Confirm what you actually hold with
+`myPermissions`, and if a metric is refused, the query's doc page states the permission it needs.
 
-Never read, print or echo the key's value; reference the environment variable. Start with `myWorkspace`
-and `myPermissions` to confirm which workspace you're looking at and what you can see.
+Start with `myWorkspace` and `myPermissions` so you know whose data you're looking at and what's visible.
 
 ## The metric API
 
-One query shape covers most of it:
+Plain exposes thread metric queries for single values, time series and heatmaps, with grouping,
+filtering and configurable percentiles, plus a mode that returns the underlying thread IDs.
 
-```graphql
-query { threadSingleValueMetric(input: {
-  metricName: threads_first_response_time
-  from: "2026-08-01T00:00:00Z"
-  to:   "2026-09-01T00:00:00Z"
-  groupBy: [{ dimension: LABEL_TYPE }]     # the field is `dimension`, not `groupBy`
-  percentile: 90                            # defaults to 50 (median)
-  mode: METRIC                              # or THREAD_IDS
-}) { values { value group { dimension value } } } }
-```
+**Get the current metric names, grouping dimensions and filter shapes from the docs or the schema — don't
+work from memory.** They change as Plain adds metrics, and a stale name is a failed query:
 
-Also available: `threadTimeSeriesMetric` (adds `interval`, for trends) and `threadHeatmapMetric` (for
-time-of-day/day-of-week patterns — good for staffing and business-hours arguments). The un-prefixed
-`singleValueMetric` / `timeSeriesMetric` / `heatmapMetric` are deprecated and can't filter or group.
+- `https://www.plain.com/docs/llms.txt` → find the metric query pages
+- `https://www.plain.com/docs/graphql-reference/queries/<name>.md` → arguments and permission
+- `https://core-api.uk.plain.com/graphql/v1/schema.graphql` → the metric-name and dimension enums
 
-**Metric names.** Durations: `threads_first_response_time`, `threads_resolution_time`,
-`threads_time_customer_waiting`, `threads_time_between_follow_up_responses` (each also has a `_median`
-variant, and accepts `percentile`). Satisfaction: `threads_csat__percentage`, `threads_csat__count`.
-SLAs: `service_level_agreement_compliance_frt`, `service_level_agreement_compliance_nrt`. Volume:
-`threads_created_count` (time-series only), `threads_status_count__todo|done|snoozed`,
-`threads_all_time_count_done`. **Most have an `agent_` prefixed variant** covering AI-handled threads —
-`agent_threads_first_response_time`, `agent_threads_csat__percentage`, `agent_threads_resolution_time`
-and so on.
+Read the error's `fields` array when a metric call is rejected — these queries validate strictly and the
+error names the exact argument to fix, including requirements the schema doesn't advertise. Fix and retry
+rather than guessing at a different query.
 
-**`groupBy` dimensions:** `LABEL_TYPE`, `ASSIGNEE`, `TIER`, `PRIORITY`, `COMPANY`, `TENANT`,
-`CUSTOMER_GROUP`, `MESSAGE_SOURCE`, plus `THREAD_FIELD` and `TENANT_FIELD` (both need `subKey` set to the
-field key / external ID).
+Two things worth knowing structurally: **prefer percentiles over medians** when hunting for where
+customers actually suffer, because medians hide the tail; and where Plain offers an AI-handled variant of
+a metric alongside the overall one, comparing them is usually the most interesting chart a workspace has
+never seen.
 
-**Requirements the schema doesn't state, and each one is a hard validation error:**
-- `to` **cannot be in the future** — even tomorrow's date fails.
-- Output is `values { value group { … } }` — `group` singular, not `groups`.
-- **`agent_` metrics require a `groupBy`.** Pass `{ dimension: ASSIGNEE }` for a per-agent breakdown, or
-  another dimension together with `filters.userIds`. A bare `agent_` query is rejected.
-- **CSAT metrics require `filters.surveyResponse.rating`**, e.g.
-  `filters: { surveyResponse: { rating: [1,2,3,4,5] } }`.
-- All-time counts (`threads_all_time_count_done`) **reject** a date range; everything else requires one.
-- `percentile` only applies to the configurable-percentile duration metrics.
-- `threadTimeSeriesMetric` additionally needs `interval` (e.g. `DAY`).
-- Empty `values` means no qualifying threads in the window, not a broken query — widen the range before
-  concluding anything, and never present an empty result as a finding.
-
-Beyond metrics, three qualitative sources matter: `knowledgeGaps` (AI-generated summaries of questions
-customers aren't finding answers to), `threadClusters` (recurring themes), and `customerSurveys`.
+Beyond metrics, look for the qualitative surfaces too — Plain surfaces recurring themes and gaps in
+customer knowledge, which turn directly into help-centre articles. Find them via the docs index.
 
 ## What to actually look for
 
 Don't dump every metric. Go after the questions that lead somewhere:
 
-1. **Where is response slowest, and is it structural?** `threads_first_response_time` at P90 grouped by
-   `LABEL_TYPE`. **Use P90, not the median** — medians hide the tail where customers actually churn. A
+1. **Where is response slowest, and is it structural?** First-response time at P90, grouped by label.
+   **Use P90, not the median** — medians hide the tail where customers actually churn. A
    category that's 10× the others usually has no routing rule or no owner.
-2. **Which categories hurt satisfaction?** `threads_csat__percentage` by `LABEL_TYPE`. Cross-reference
+2. **Which categories hurt satisfaction?** CSAT grouped by label. Cross-reference
    with resolution time; slow *and* unhappy is a different problem from slow but tolerated.
-3. **How does AI-handled compare to human-handled?** The `agent_` variants against the base ones —
-   remembering that `agent_` metrics need a `groupBy` (`ASSIGNEE` is usually what you want). This is the
-   most interesting chart most workspaces have never seen, and it tells you whether to widen or narrow
-   Ari's remit.
-4. **Are SLAs actually being met, by tier?** `service_level_agreement_compliance_frt` by `TIER`. A tier
+3. **How does AI-handled compare to human-handled?** Plain's AI-handled metric variants against the
+   overall ones. The most interesting chart most workspaces have never seen, and it tells them whether to
+   widen or narrow the AI's remit.
+4. **Are SLAs actually being met, by tier?** SLA compliance grouped by tier. A tier
    with an aspirational SLA nobody hits is worse than no SLA.
-5. **Is load lopsided across people?** Duration and volume by `ASSIGNEE` (needs `metricsAgent:read`).
+5. **Is load lopsided across people?** Duration and volume grouped by assignee.
    Frame this carefully — it's about routing and capacity, not ranking individuals.
 6. **What's falling through triage?** Volume of threads carrying the fallback label ("Needs triage", or
    whatever they used). High volume means the classification tree has a gap.
-7. **Which triage branches are dead or over-broad?** Pull recent
-   `workflowExecutionsForWorkspace` and tally `stepExecutions[].output.matchedConditionIndex`. A branch
-   that never matches is a wasted prompt; one that catches everything is too vague.
-8. **What should they write docs about?** `knowledgeGaps` and `threadClusters` — the fix is usually a help
-   center article, and `generateHelpCenterArticle` can draft it.
-9. **When does volume arrive?** `threadHeatmapMetric` by hour/day, against their business hours.
+7. **Which triage branches are dead or over-broad?** Pull recent workflow executions and tally which
+   branch each one matched. A branch that never matches is a wasted prompt; one that catches everything
+   is too vague.
+8. **What should they write docs about?** Plain surfaces knowledge gaps and recurring thread themes; the
+   fix is usually a help-centre article, and Plain can draft one from a thread.
+9. **When does volume arrive?** A heatmap by hour and weekday, read against their business hours.
 
 ## The dashboard
 
@@ -117,7 +110,7 @@ tell them the path so they can open it.
 This is the part that earns the skill. For each recommendation give four things:
 
 1. **The finding**, in one sentence, with the number.
-2. **The evidence** — set `mode: THREAD_IDS` on the query behind it and cite actual threads. A
+2. **The evidence** — re-run the query in the mode that returns thread IDs and cite actual threads. A
    recommendation that can't point at threads is a guess.
 3. **The suggested change**, concretely (which label, which tier, which prompt wording).
 4. **A copy-paste prompt** that calls the configuration skill to implement it.
