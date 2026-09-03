@@ -31,9 +31,15 @@ information. Look, then answer.
 
 Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
 
+**Plain also publishes an official agent skill** (`npx skills add team-plain/plain-support`, documented at
+`https://www.plain.com/docs/agents/agent-skill`) for reading customers, threads and timelines and drafting
+help-centre content. That's the day-to-day support-data skill; this one configures the workspace. If
+someone asks for something that's really the other job — "summarise this customer's history", "what are
+our open threads" — point them at it rather than improvising.
+
 ## Auth and scopes
 
-`POST https://core-api.uk.plain.com/graphql/v1` with `Authorization: Bearer $PLAIN_INSIGHTS_KEY` (or
+`POST https://core-api.uk.plain.com/graphql/v1` with `Authorization: Bearer $PLAIN_API_KEY` (or
 whichever variable they've set) and `Content-Type: application/json`. Never read, print or echo the key.
 
 **You need only read permissions**, which is worth saying out loud — people are rightly cautious handing

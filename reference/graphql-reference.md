@@ -24,7 +24,7 @@ Fetch the index when you don't know what exists. Fetch the operation page when y
 the schema when you need a precise shape or a list of enum values.
 
 **Endpoint:** `POST https://core-api.uk.plain.com/graphql/v1`
-**Headers:** `Authorization: Bearer $PLAIN_SETUP_KEY` and `Content-Type: application/json`
+**Headers:** `Authorization: Bearer $PLAIN_API_KEY` and `Content-Type: application/json`
 **Body:** `{ "query": "...", "variables": {...}, "operationName": "..." }`
 
 Never read, print, echo or log the key's value — reference the environment variable only.

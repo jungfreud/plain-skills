@@ -44,6 +44,12 @@ information. Look, then answer.
 
 Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
 
+**Plain also publishes an official agent skill** (`npx skills add team-plain/plain-support`, documented at
+`https://www.plain.com/docs/agents/agent-skill`) for reading customers, threads and timelines and drafting
+help-centre content. That's the day-to-day support-data skill; this one configures the workspace. If
+someone asks for something that's really the other job — "summarise this customer's history", "what are
+our open threads" — point them at it rather than improvising.
+
 ## The shape of this conversation — read this first
 
 **The config conversation comes first. The API key comes last.** This ordering is deliberate and you must
@@ -296,22 +302,27 @@ Then, and only then, the key instructions. Two turns, not four:
 **Getting the key to you without it ever being typed into the chat.** You established back at the start
 that they have a terminal — if it turns out they don't, stop here and switch to the UI-guided path rather
 than asking for a key you can't use.
-*"Put it in a file only you can read and I'll load it per command — it never touches this conversation,
-and it never lands in a dotfile you might commit:"*
+*"Set it as an environment variable — same as Plain's own agent skill uses:"*
 
 ```bash
-printf 'export PLAIN_SETUP_KEY="plainApiKey_xxx"\n' > ~/.plain-setup.env && chmod 600 ~/.plain-setup.env
+export PLAIN_API_KEY="plainApiKey_..."
 ```
 
-*"Then just tell me it's set."* From there, prefix every call with `source ~/.plain-setup.env && …`.
+*"Add that to your shell profile (`.zshrc`, `.bashrc`) so it persists, then tell me it's set."*
 
-**Do not tell them to append it to `~/.zshrc`.** Any competent engineer will refuse, for two good reasons:
-it writes a temporary credential permanently into a file people commit to dotfiles repos, and sourcing it
-in *their* shell doesn't populate the environment of the shell *you* spawn, so it frequently doesn't even
-work. Deleting `~/.plain-setup.env` goes on the Phase 3 cleanup list next to deleting the machine user.
+**One catch specific to this flow:** they're creating the key *during* our conversation, and a profile is
+read when a session starts — so a line added to `.zshrc` now usually won't reach the shell you're already
+running in. Either they restart the session after adding it (cleanest, and leaves them set up for next
+time), or for right now use a file you source per command:
 
-Never echo, print, log, or repeat the key's value — not even to confirm you have it. `myWorkspace` and
-`myPermissions` returning successfully is all the proof you need.
+```bash
+printf 'export PLAIN_API_KEY="plainApiKey_..."\n' > ~/.plain-key.env && chmod 600 ~/.plain-key.env
+```
+
+then prefix your calls with `source ~/.plain-key.env && …`. Offer both and let them pick; the profile
+route is the one Plain documents, so prefer it if they're happy to restart.
+
+Either way, never read, print or echo the value, and never accept it pasted into the chat.
 
 **Then hand off to the configuration skill.** Fetch
 `https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md` and follow it, passing the config spec you saved. It

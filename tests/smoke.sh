@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Read-only smoke test: does the live Plain API still match what the reference documents?
 #
-# Usage:  PLAIN_SETUP_KEY=plainApiKey_xxx ./tests/smoke.sh
+# Usage:  PLAIN_API_KEY=plainApiKey_xxx ./tests/smoke.sh
 #
 # Only runs queries — no mutations, nothing created or changed. Safe against any workspace,
 # though a throwaway one is still the sensible choice.
 
 set -uo pipefail
 
-: "${PLAIN_SETUP_KEY:?Set PLAIN_SETUP_KEY (do not paste the key into a chat)}"
+: "${PLAIN_API_KEY:?Set PLAIN_API_KEY (do not paste the key into a chat)}"
 ENDPOINT="https://core-api.uk.plain.com/graphql/v1"
 PASS=0
 FAIL=0
@@ -17,7 +17,7 @@ command -v jq >/dev/null || { echo "jq is required"; exit 1; }
 
 q() {
   curl -s -X POST "$ENDPOINT" \
-    -H "Authorization: Bearer $PLAIN_SETUP_KEY" \
+    -H "Authorization: Bearer $PLAIN_API_KEY" \
     -H "Content-Type: application/json" \
     --data "$(jq -nc --arg q "$1" '{query:$q}')"
 }
