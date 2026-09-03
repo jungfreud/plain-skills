@@ -1,8 +1,13 @@
 ---
 name: plain-configuration
-description: Applies a Plain workspace configuration over the GraphQL API. Takes an agreed config spec, validates it, creates everything in the correct dependency order, verifies each result, and reports what was built plus what still needs a human click. Called by the onboarding skill for new workspaces and by the tuning skill for changes to existing ones.
+description: Configure a Plain workspace. Create tiers, SLAs, business hours, labels, teams, custom fields, AI triage and routing workflows, saved views, help centers and knowledge sources. Applies a configuration in dependency order, verifies each step, and reports what still needs a human.
+license: MIT
+compatibility: Requires curl, jq, and PLAIN_API_KEY environment variable
+metadata:
+  author: plain
+  version: "0.1"
+allowed-tools: Bash Read Write WebFetch
 ---
-
 # Plain configuration
 
 You configure a Plain workspace over Plain's GraphQL API — tiers, SLAs, business hours, labels, custom
@@ -16,18 +21,141 @@ first response SLA for enterprise"*. Turn that into the config spec below, read 
 then build it. Ask about anything genuinely ambiguous, but don't interview them — they came here to get it
 done. If they haven't mentioned something, leave it out rather than inventing requirements.
 
-**Called by another skill**, typically [plain-onboarding](https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-onboarding/SKILL.md), which runs a
+**Called by another skill**, typically [plain-onboarding](https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-onboarding/SKILL.md), which runs a
 guided conversation and hands you a finished spec. Then your job is purely to build it correctly.
 
 Either way: **build it, verify it, and be honest about what you couldn't do.**
 
 **Read the API reference before calling anything:**
-`https://raw.githubusercontent.com/jungfreud/plain-skills/main/reference/graphql-reference.md`
-(or the sibling file `../reference/graphql-reference.md` if you were installed as a bundle). It has the
+`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/references/API.md`
+(or the sibling file `references/API.md` if you were installed as a bundle). It has the
 exact input shapes, the dependency order, and the behaviours that fail silently. Don't guess field names —
 if something isn't there, fetch the official per-operation doc at
 `https://www.plain.com/docs/graphql-reference/mutations/<name>.md`, which also states the permission
 required.
+
+## Quick Reference
+
+Use `scripts/plain-config.sh` rather than composing GraphQL by hand. It encodes the
+validation rules the API enforces, so calls succeed first time.
+
+```bash
+# Always start here — which workspace, what can this key do, what already exists
+scripts/plain-config.sh workspace
+scripts/plain-config.sh permissions
+scripts/plain-config.sh audit
+scripts/plain-config.sh users        # real user IDs for assignment
+scripts/plain-config.sh teams        # routing teams
+```
+
+### Labels and teams
+
+```bash
+scripts/plain-config.sh label create --name "Billing" --icon credit-card --color "#22C55E"
+scripts/plain-config.sh label create --name "Engineering" --icon users --team
+scripts/plain-config.sh label list
+```
+
+Labels default to being excluded from Plain's own AI triage, so your workflow stays
+authoritative. Pass `--ai-managed` to opt out. A **team is a label type of kind TEAM** —
+`--team` creates one, and its ID is what assignment steps point at.
+
+### Tiers and SLAs
+
+```bash
+scripts/plain-config.sh tier create --name "Enterprise" --default-priority 1
+scripts/plain-config.sh tier create --name "Standard" --default
+scripts/plain-config.sh sla create --tier tier_01ABC... --kind first --minutes 60 --priorities 0,1
+scripts/plain-config.sh sla create --tier tier_01ABC... --kind next  --minutes 240 --round-the-clock
+```
+
+One SLA record holds a first-response *or* a next-response target, never both — run it
+twice for both. A pre-breach warning is always attached; change it with `--warn-minutes`.
+
+### Business hours
+
+```bash
+scripts/plain-config.sh hours get
+scripts/plain-config.sh hours set --timezone Europe/London --open 09:00 --close 17:30
+```
+
+This replaces the entire set, so it refuses to overwrite existing slots without `--force`.
+Always `hours get` first and show the customer what would be lost.
+
+### Thread fields
+
+```bash
+scripts/plain-config.sh threadfield create --label "Resolution reason" --type ENUM \
+  --values fixed,wontfix,duplicate,user_error
+```
+
+### Workflows
+
+A workflow is four things: create a draft, add steps **leaf-first**, set the start step,
+publish. It does nothing until published.
+
+```bash
+# 1. draft
+WF=$(scripts/plain-config.sh workflow create --name "Inbound triage" | jq -r '.data.createWorkflow.workflow.id')
+
+# 2. terminal actions first — transitions need real step IDs.
+#    Chain within a branch using --next.
+ASSIGN=$(scripts/plain-config.sh step action --workflow $WF --name "assign" \
+          --payload "$(scripts/plain-config.sh payload assign-user u_01ABC...)" \
+          | jq -r '.data.createWorkflowStep.workflowStep.id')
+BUG=$(scripts/plain-config.sh step action --workflow $WF --name "label bug" \
+          --payload "$(scripts/plain-config.sh payload apply-labels lt_01BUG...)" \
+          --next $ASSIGN | jq -r '.data.createWorkflowStep.workflowStep.id')
+
+# 3. one prompt per line; N prompts need N+1 transitions, last is the fallback
+scripts/plain-config.sh step switch --workflow $WF --prompts prompts.txt \
+  --transitions "$BUG,$FEATURE,$TRIAGE"
+
+# 4. publish
+scripts/plain-config.sh workflow publish --workflow $WF --start $SWITCH
+
+scripts/plain-config.sh workflow list
+scripts/plain-config.sh workflow unpublish $WF
+```
+
+### Saved views and knowledge
+
+```bash
+scripts/plain-config.sh view create --name "Urgent billing" --statuses TODO \
+  --priorities 0,1 --labels lt_01BILLING...
+scripts/plain-config.sh knowledge add --url https://acme.com/sitemap.xml
+scripts/plain-config.sh knowledge add --url https://status.acme.com --page
+```
+
+### Prove it works
+
+```bash
+scripts/plain-config.sh test thread --customer c_01ABC... --title "Export returns 500"
+scripts/plain-config.sh workflow runs $WF     # which branch the AI matched
+scripts/plain-config.sh thread state th_01ABC...   # what actually landed
+```
+
+`workflow runs` is the tuning loop: reword a prompt, re-run a thread, check the matched
+index. Do it once in front of the customer so they can maintain it themselves.
+
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `PLAIN_API_KEY` | Yes | Your Plain API key |
+| `PLAIN_API_URL` | No | API endpoint (default: `https://core-api.uk.plain.com/graphql/v1`) |
+
+## Output format
+
+Every command returns raw JSON. **Always check `error` before assuming success:**
+
+```bash
+scripts/plain-config.sh label create --name Billing | jq '.data.createLabelType.error'
+```
+
+`error.fields` names the exact field at fault and is usually enough to fix and retry.
+For anything that matters, verify the end state rather than the step status — some
+operations report success while doing nothing.
 
 ## Look it up — don't recall it
 

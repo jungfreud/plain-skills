@@ -42,11 +42,15 @@ query { myPermissions { permissions } }              # what can this key really 
 query { subscriptionEventTypes }                     # valid webhook event types
 query { workflowCapabilities(triggerType: ...) }     # what a workflow of this type may contain
 query { users(first: 50) { edges { node { id publicName } } } }
-query { teams(first: 50) { edges { node { id name } } } }
+query { labelTypes(first: 100) { edges { node { id name type } } } }  # teams are TEAM-kind labels
 query { workflows(first: 20) { edges { node { id name publishedAt { iso8601 } } } } }
 query { labelTypes(first: 100) { edges { node { id name } } } }
 query { tiers(first: 20) { edges { node { id name } } } }
 ```
+
+**Teams are not a separate entity.** A team is a label type of kind `TEAM`, so they're listed by filtering
+`labelTypes` on `type`, created the same way any label is, and referenced by their label-type ID wherever
+something assigns to a team. There is no `teams` query.
 
 Start every session with `myWorkspace` and `myPermissions`. The first tells you whether you're about to
 modify the workspace they meant — read the name back to them before creating anything. The second tells

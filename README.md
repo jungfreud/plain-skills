@@ -56,9 +56,9 @@ configuration skill for you.
 
 | Skill | Use it when | What it does |
 | --- | --- | --- |
-| **[plain-configuration](./plain-configuration/SKILL.md)** | You know what you want your workspace to do | Teaches your agent to build it: tiers, SLAs, business hours, labels, custom fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks. Applies everything in the right order, verifies each step, and tells you what still needs a click in the app. |
-| **[plain-onboarding](./plain-onboarding/SKILL.md)** | You're starting from scratch and want to be walked through it | A guided conversation about how your support actually works today. It designs the workspace with you, explains what each choice buys you, then hands the result to **plain-configuration** to build. |
-| **[plain-insights](./plain-insights/SKILL.md)** | You want to know what to improve | Read-only. Pulls CSAT, first response and resolution times, SLA compliance and AI-vs-human handling — by label, assignee, tier and channel — into an HTML dashboard, then turns each finding into a prompt you can paste to fix it. |
+| **[plain-configuration](./skills/plain-configuration/SKILL.md)** | You know what you want your workspace to do | Teaches your agent to build it: tiers, SLAs, business hours, labels, custom fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks. Applies everything in the right order, verifies each step, and tells you what still needs a click in the app. |
+| **[plain-onboarding](./skills/plain-onboarding/SKILL.md)** | You're starting from scratch and want to be walked through it | A guided conversation about how your support actually works today. It designs the workspace with you, explains what each choice buys you, then hands the result to **plain-configuration** to build. |
+| **[plain-insights](./skills/plain-insights/SKILL.md)** | You want to know what to improve | Read-only. Pulls CSAT, first response and resolution times, SLA compliance and AI-vs-human handling — by label, assignee, tier and channel — into an HTML dashboard, then turns each finding into a prompt you can paste to fix it. |
 
 The modularity is the point. **plain-configuration** is the engine and works entirely on its own —
 describe what you want in a sentence and your agent can one-shot it. **plain-onboarding** is a
@@ -80,14 +80,14 @@ Paste this into any agent with a terminal — Claude Code, Codex, Cursor:
 **Set up a new workspace, guided:**
 
 ```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-onboarding/SKILL.md
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-onboarding/SKILL.md
 and follow exactly what it outputs. I'm new to Plain — walk me through it and set up my workspace.
 ```
 
 **Already know what you want:**
 
 ```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md
 and follow it. I want AI triage that labels incoming threads as Bug, Billing or Feature Request, routes
 bugs to engineering as high priority, and a 1-hour first response SLA for enterprise customers.
 ```
@@ -95,7 +95,7 @@ bugs to engineering as high priority, and a 1-hour first response SLA for enterp
 **Find out what to improve:**
 
 ```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-insights/SKILL.md
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-insights/SKILL.md
 and follow it. Show me where our support is slowest and what I should change.
 ```
 
@@ -134,7 +134,7 @@ anything.
 
 ## The reference
 
-[`reference/graphql-reference.md`](./reference/graphql-reference.md) is a method guide, not a fact sheet.
+[`skills/plain-configuration/references/API.md`](./skills/plain-configuration/references/API.md) is a method guide, not a fact sheet.
 It deliberately contains almost no specifics about Plain — those live in
 [Plain's docs](https://www.plain.com/docs), which are always current, and the skills are written to look
 them up at the moment they're needed rather than recall them.

@@ -101,6 +101,26 @@ for pair in \
 done
 
 echo
+echo "Configuration CLI"
+CLI="skills/plain-configuration/scripts/plain-config.sh"
+if [ -x "$CLI" ]; then
+  bash -n "$CLI" && { printf '  ok    plain-config.sh parses\n'; PASS=$((PASS+1)); } \
+                 || { printf '  FAIL  plain-config.sh has a syntax error\n'; FAIL=$((FAIL+1)); }
+  if "$CLI" workspace | jq -e '.data.myWorkspace.id' >/dev/null 2>&1; then
+    printf '  ok    plain-config.sh workspace\n'; PASS=$((PASS+1))
+  else
+    printf '  FAIL  plain-config.sh workspace\n'; FAIL=$((FAIL+1))
+  fi
+  if "$CLI" audit | jq -e '.data.labelTypes' >/dev/null 2>&1; then
+    printf '  ok    plain-config.sh audit\n'; PASS=$((PASS+1))
+  else
+    printf '  FAIL  plain-config.sh audit\n'; FAIL=$((FAIL+1))
+  fi
+else
+  printf '  FAIL  %s not executable\n' "$CLI"; FAIL=$((FAIL+1))
+fi
+
+echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || {
   echo

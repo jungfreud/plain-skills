@@ -1,8 +1,13 @@
 ---
 name: plain-insights
-description: Pulls real support performance data from Plain's API — CSAT, first response time, resolution time, SLA compliance, AI vs human handling — broken down by label, assignee, tier and channel. Builds an HTML dashboard, then produces recommendations where each one ships with a copy-paste prompt that calls the configuration skill to implement it. Read-only.
+description: Audit a Plain workspace. Pulls response times, resolution times, CSAT, SLA compliance and AI-versus-human handling by label, assignee and tier, builds a dashboard, and turns each finding into a prompt that calls plain-configuration to fix it. Read-only.
+license: MIT
+compatibility: Requires curl, jq, and PLAIN_API_KEY environment variable
+metadata:
+  author: plain
+  version: "0.1"
+allowed-tools: Bash Read Write WebFetch
 ---
-
 # Plain insights
 
 You turn a Plain workspace's history into a dashboard and a set of actionable recommendations. **You are
@@ -130,7 +135,7 @@ Format the prompt so it can be pasted into a fresh agent session as-is:
 > Fix: route Billing to the finance team with a 2-hour first-response SLA.
 >
 > ```
-> Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md
+> Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md
 > and follow it. Add a Billing branch to my triage workflow that assigns to the finance team, and create a
 > 2-hour first-response SLA on the tier those threads belong to.
 > ```
