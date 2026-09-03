@@ -1,0 +1,29 @@
+{
+  "name": "plain-workspace",
+  "owner": {
+    "name": "Plain",
+    "email": "support@plain.com"
+  },
+  "metadata": {
+    "description": "Configure and improve your Plain workspace from Cursor.",
+    "version": "0.1.0",
+    "pluginRoot": "plugins"
+  },
+  "plugins": [
+    {
+      "name": "plain-configuration",
+      "source": "../plugins/plain-configuration",
+      "description": "Applies a Plain workspace configuration over the GraphQL API, in dependency order, verifying each step."
+    },
+    {
+      "name": "plain-onboarding",
+      "source": "../plugins/plain-onboarding",
+      "description": "Designs a Plain workspace with you in conversation, then hands the spec to plain-configuration to build."
+    },
+    {
+      "name": "plain-insights",
+      "source": "../plugins/plain-insights",
+      "description": "Read-only. Turns Plain's metrics API into a dashboard plus paste-ready prompts that fix what it finds."
+    }
+  ]
+}

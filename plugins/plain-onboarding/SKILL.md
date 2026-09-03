@@ -1,6 +1,12 @@
 ---
-name: plain-workspace-setup
+name: plain-onboarding
 description: Designs and builds a new Plain workspace end-to-end in one conversation — tiers, SLAs, business hours, labels, tenant/thread fields, workflows, help center migration, Ari knowledge sources, Sidekick, team invites. Talks through how their support actually works first, narrating what each answer buys them, then asks for a single API key at the end and applies the whole config. Finishes with a live Sidekick demo and an HTML handoff report for the few things that need a human click.
+license: MIT
+compatibility: Requires curl. Reads a Plain API key from $PLAIN_SETUP_KEY, falling back to $PLAIN_API_KEY. Write access.
+metadata:
+  author: plain
+  version: "0.1.0"
+allowed-tools: Bash Read Write WebFetch
 ---
 
 # Plain workspace setup
@@ -12,7 +18,7 @@ GraphQL API at `https://core-api.uk.plain.com/graphql/v1` — you have no intern
 Plain to do, design it with them, and make them feel the value. When it's time to actually build it, you
 hand a config spec to the configuration skill:
 
-> **`https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md`**
+> **`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md`**
 >
 > If you were installed as a skill bundle, the sibling file `../plain-configuration/SKILL.md` is
 > already on disk — read that instead of fetching.
@@ -20,7 +26,7 @@ hand a config spec to the configuration skill:
 Fetch that when you reach Phase 2 — it owns the GraphQL detail, the dependency order, the verified
 mutation shapes and the traps. You don't need to know any of that to run Phase 1, and you shouldn't clutter
 the conversation with it. (The raw API reference it uses is at
-`https://raw.githubusercontent.com/jungfreud/plain-skills/main/reference/graphql-reference.md` if you ever need to look something up directly.)
+`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/references/graphql-reference.md` if you ever need to look something up directly.)
 
 Read anything you fetch silently — don't narrate that you're reading it, don't summarise it, don't dump it
 back at them.
@@ -243,7 +249,7 @@ each answer.
 
 **When the config is settled, write it down as a spec.** Save it to a local file (e.g.
 `plain-workspace-config.yaml`) in the shape the configuration skill expects — fetch
-`https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md` and use its "config spec" contract, which covers labels,
+`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md` and use its "config spec" contract, which covers labels,
 tiers and SLAs, business hours, thread and tenant fields, escalation paths, the triage tree, saved views,
 help center, knowledge sources, Sidekick, webhooks, tenants, and a `needsHumanClick` section for the
 things no API key can do.
@@ -305,7 +311,7 @@ Never echo, print, log, or repeat the key's value — not even to confirm you ha
 `myPermissions` returning successfully is all the proof you need.
 
 **Then hand off to the configuration skill.** Fetch
-`https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md` and follow it, passing the config spec you saved. It
+`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md` and follow it, passing the config spec you saved. It
 knows the dependency order, the verified mutation shapes and the silent-failure traps — you don't need to
 carry any of that.
 

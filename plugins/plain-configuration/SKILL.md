@@ -1,6 +1,12 @@
 ---
 name: plain-configuration
 description: Applies a Plain workspace configuration over the GraphQL API. Takes an agreed config spec, validates it, creates everything in the correct dependency order, verifies each result, and reports what was built plus what still needs a human click. Called by the onboarding skill for new workspaces and by the tuning skill for changes to existing ones.
+license: MIT
+compatibility: Requires curl. Reads a Plain API key from $PLAIN_SETUP_KEY, falling back to $PLAIN_API_KEY. Write access.
+metadata:
+  author: plain
+  version: "0.1.0"
+allowed-tools: Bash Read Write WebFetch
 ---
 
 # Plain configuration
@@ -16,14 +22,14 @@ first response SLA for enterprise"*. Turn that into the config spec below, read 
 then build it. Ask about anything genuinely ambiguous, but don't interview them — they came here to get it
 done. If they haven't mentioned something, leave it out rather than inventing requirements.
 
-**Called by another skill**, typically [plain-onboarding](https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-onboarding/SKILL.md), which runs a
+**Called by another skill**, typically [plain-onboarding](https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-onboarding/SKILL.md), which runs a
 guided conversation and hands you a finished spec. Then your job is purely to build it correctly.
 
 Either way: **build it, verify it, and be honest about what you couldn't do.**
 
 **Read the API reference before calling anything:**
-`https://raw.githubusercontent.com/jungfreud/plain-skills/main/reference/graphql-reference.md`
-(or the sibling file `../reference/graphql-reference.md` if you were installed as a bundle). It has the
+`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/references/graphql-reference.md`
+(or the sibling file `references/graphql-reference.md` if you were installed as a bundle). It has the
 exact input shapes, the dependency order, and the behaviours that fail silently. Don't guess field names —
 if something isn't there, fetch the official per-operation doc at
 `https://www.plain.com/docs/graphql-reference/mutations/<name>.md`, which also states the permission
@@ -31,8 +37,14 @@ required.
 
 ## Endpoint and auth
 
-`POST https://core-api.uk.plain.com/graphql/v1` with
-`Authorization: Bearer $PLAIN_SETUP_KEY` and `Content-Type: application/json`.
+`POST https://core-api.uk.plain.com/graphql/v1` with `Content-Type: application/json` and
+`Authorization: Bearer <key>`, where the key is the first of these that is set:
+**`$PLAIN_SETUP_KEY`**, then **`$PLAIN_API_KEY`**.
+
+`PLAIN_SETUP_KEY` is the one to ask for — a name that says what the key is for, and one that doesn't
+collide with a long-lived day-to-day key. `PLAIN_API_KEY` is the convention used by Plain's own
+[plain-support](https://github.com/team-plain/plain-support) skill, so honour it if that's what they
+already have rather than making them export the same secret twice.
 
 **Never read, print, echo or log the key's value.** Reference the environment variable. If the caller
 hasn't set one, ask them to — don't accept a pasted key in the conversation. See the onboarding skill's

@@ -43,9 +43,9 @@ configuration skill for you.
 
 | Skill | Use it when | What it does |
 | --- | --- | --- |
-| **[plain-configuration](./plain-configuration/SKILL.md)** | You know what you want your workspace to do | Teaches your agent to build it: tiers, SLAs, business hours, labels, custom fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks. Applies everything in the right order, verifies each step, and tells you what still needs a click in the app. |
-| **[plain-onboarding](./plain-onboarding/SKILL.md)** | You're starting from scratch and want to be walked through it | A guided conversation about how your support actually works today. It designs the workspace with you, explains what each choice buys you, then hands the result to **plain-configuration** to build. |
-| **[plain-insights](./plain-insights/SKILL.md)** | You want to know what to improve | Read-only. Pulls CSAT, first response and resolution times, SLA compliance and AI-vs-human handling — by label, assignee, tier and channel — into an HTML dashboard, then turns each finding into a prompt you can paste to fix it. |
+| **[plain-configuration](./skills/plain-configuration/SKILL.md)** | You know what you want your workspace to do | Teaches your agent to build it: tiers, SLAs, business hours, labels, custom fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks. Applies everything in the right order, verifies each step, and tells you what still needs a click in the app. |
+| **[plain-onboarding](./skills/plain-onboarding/SKILL.md)** | You're starting from scratch and want to be walked through it | A guided conversation about how your support actually works today. It designs the workspace with you, explains what each choice buys you, then hands the result to **plain-configuration** to build. |
+| **[plain-insights](./skills/plain-insights/SKILL.md)** | You want to know what to improve | Read-only. Pulls CSAT, first response and resolution times, SLA compliance and AI-vs-human handling — by label, assignee, tier and channel — into an HTML dashboard, then turns each finding into a prompt you can paste to fix it. |
 
 The modularity is the point. **plain-configuration** is the engine and works entirely on its own —
 describe what you want in a sentence and your agent can one-shot it. **plain-onboarding** is a
@@ -67,14 +67,14 @@ Paste this into any agent with a terminal — Claude Code, Codex, Cursor:
 **Set up a new workspace, guided:**
 
 ```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-onboarding/SKILL.md
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-onboarding/SKILL.md
 and follow exactly what it outputs. I'm new to Plain — walk me through it and set up my workspace.
 ```
 
 **Already know what you want:**
 
 ```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md
 and follow it. I want AI triage that labels incoming threads as Bug, Billing or Feature Request, routes
 bugs to engineering as high priority, and a 1-hour first response SLA for enterprise customers.
 ```
@@ -82,33 +82,78 @@ bugs to engineering as high priority, and a 1-hour first response SLA for enterp
 **Find out what to improve:**
 
 ```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-insights/SKILL.md
+Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-insights/SKILL.md
 and follow it. Show me where our support is slowest and what I should change.
 ```
 
 It's a `curl` rather than "read this URL" because not every agent has a web-fetch tool, but they can all
 run a shell command.
 
-Prefer a package manager? Via [skills.sh](https://www.skills.sh):
+### Install it properly
 
-```
+**Via [skills.sh](https://www.skills.sh):**
+
+```bash
 npx skills add jungfreud/plain-skills
 ```
+
+**As a Claude Code plugin** — the repo root *is* the plugin, and all three skills come with it:
+
+```bash
+git clone https://github.com/jungfreud/plain-skills
+claude --plugin-dir ./plain-skills
+```
+
+**In Cursor**, add this repo as a plugin marketplace; `.cursor-plugin/marketplace.json` publishes the
+three skills as separate plugins so you can install only the one you need.
+
+## How the repo is laid out
+
+```
+skills/                      ← source of truth
+  plain-onboarding/SKILL.md
+  plain-configuration/SKILL.md
+    references/graphql-reference.md
+  plain-insights/SKILL.md
+plugins/                     ← GENERATED from skills/ — don't edit by hand
+.claude-plugin/plugin.json   ← the repo root is the Claude Code plugin
+.cursor-plugin/marketplace.json
+```
+
+Claude Code and skills.sh load skills from `skills/` at the plugin root. Cursor wants one directory per
+plugin with `SKILL.md` at its root, so `plugins/` is a rearranged copy of the same content — generated,
+never hand-edited:
+
+```bash
+./scripts/sync-plugins.sh          # regenerate after changing anything in skills/
+./scripts/sync-plugins.sh --check  # fail if the two have drifted
+```
+
+The GraphQL reference lives *inside* `plain-configuration` rather than at the repo root, because that's
+the only skill that needs it and a skill should be installable on its own. Every skill also carries the
+`raw.githubusercontent.com` URL for anything it might need, so it still works when the installer copies
+`SKILL.md` and nothing else.
 
 ## Your API key
 
 You'll need a Plain workspace and an API key: **Settings → Machine Users → Add API key**. The Admin preset
 covers everything; if you'd rather scope it tightly, the exact permissions are listed in the
-[reference](./reference/graphql-reference.md).
+[reference](./skills/plain-configuration/references/graphql-reference.md).
 
-**Don't paste the key into the chat.** Set it as an environment variable yourself:
+**Don't paste the key into the chat.** Put it in a file only you can read, and let your agent load it
+per command:
 
 ```bash
-echo 'export PLAIN_SETUP_KEY="plainApiKey_xxx"' >> ~/.zshrc && source ~/.zshrc
+printf 'export PLAIN_SETUP_KEY="plainApiKey_xxx"\n' > ~/.plain-setup.env && chmod 600 ~/.plain-setup.env
 ```
 
-Then just tell your agent it's set. The skills reference `$PLAIN_SETUP_KEY` and never read or print its
-value, so the secret stays out of your conversation history.
+Then just tell your agent it's set. The skills reference the variable and never read or print its value,
+so the secret stays out of your conversation history. Deliberately *not* `>> ~/.zshrc`: that writes a
+temporary credential permanently into a file people commit to dotfiles repos, and sourcing it in your
+shell doesn't populate the environment of the shell your agent spawns.
+
+Already have `PLAIN_API_KEY` set for Plain's [plain-support](https://github.com/team-plain/plain-support)
+skill? These skills fall back to it, so you don't need to export the same secret twice.
 
 When you're done, delete the machine user or narrow the key — a setup key can create tiers and publish
 public help center content.
@@ -118,7 +163,7 @@ For **plain-insights**, a read-only key is enough (`metrics:read`, `metricsAgent
 
 ## The reference
 
-[`reference/graphql-reference.md`](./reference/graphql-reference.md) is the curated path through the API:
+[`skills/plain-configuration/references/graphql-reference.md`](./skills/plain-configuration/references/graphql-reference.md) is the curated path through the API:
 the ~30 mutations that matter for configuring a workspace, with their exact input shapes, the dependency
 order, and the behaviours you'd otherwise find the hard way. For example:
 
@@ -137,7 +182,8 @@ the first match — with each branch chaining its own label, priority and assign
 `tests/smoke.sh` is a read-only check that the API still behaves the way the reference describes.
 
 ```bash
-PLAIN_SETUP_KEY=plainApiKey_xxx ./tests/smoke.sh
+PLAIN_SETUP_KEY=plainApiKey_xxx ./tests/smoke.sh   # is the API still what the reference says?
+./scripts/sync-plugins.sh --check                  # is plugins/ still in sync with skills/?
 ```
 
 ## Found something wrong?

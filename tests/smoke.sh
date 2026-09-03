@@ -2,13 +2,15 @@
 # Read-only smoke test: does the live Plain API still match what the reference documents?
 #
 # Usage:  PLAIN_SETUP_KEY=plainApiKey_xxx ./tests/smoke.sh
+#         (PLAIN_API_KEY is accepted too, matching team-plain/plain-support)
 #
 # Only runs queries — no mutations, nothing created or changed. Safe against any workspace,
 # though a throwaway one is still the sensible choice.
 
 set -uo pipefail
 
-: "${PLAIN_SETUP_KEY:?Set PLAIN_SETUP_KEY (do not paste the key into a chat)}"
+KEY="${PLAIN_SETUP_KEY:-${PLAIN_API_KEY:-}}"
+[ -n "$KEY" ] || { echo "Set PLAIN_SETUP_KEY or PLAIN_API_KEY (do not paste the key into a chat)" >&2; exit 1; }
 ENDPOINT="https://core-api.uk.plain.com/graphql/v1"
 PASS=0
 FAIL=0
@@ -17,7 +19,7 @@ command -v jq >/dev/null || { echo "jq is required"; exit 1; }
 
 q() {
   curl -s -X POST "$ENDPOINT" \
-    -H "Authorization: Bearer $PLAIN_SETUP_KEY" \
+    -H "Authorization: Bearer $KEY" \
     -H "Content-Type: application/json" \
     --data "$(jq -nc --arg q "$1" '{query:$q}')"
 }
@@ -90,7 +92,7 @@ echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || {
   echo
-  echo "A failure usually means the API changed and reference/graphql-reference.md is now wrong."
+  echo "A failure usually means the API changed and skills/plain-configuration/references/graphql-reference.md is now wrong."
   echo "Please open an issue with the error above."
   exit 1
 }

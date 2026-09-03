@@ -1,6 +1,12 @@
 ---
 name: plain-insights
 description: Pulls real support performance data from Plain's API — CSAT, first response time, resolution time, SLA compliance, AI vs human handling — broken down by label, assignee, tier and channel. Builds an HTML dashboard, then produces recommendations where each one ships with a copy-paste prompt that calls the configuration skill to implement it. Read-only.
+license: MIT
+compatibility: Requires curl. Reads a Plain API key from $PLAIN_INSIGHTS_KEY, falling back to $PLAIN_SETUP_KEY then $PLAIN_API_KEY. Read-only scopes are enough.
+metadata:
+  author: plain
+  version: "0.1.0"
+allowed-tools: Bash Read Write WebFetch
 ---
 
 # Plain insights
@@ -14,8 +20,9 @@ this ends with *"here's the fix, paste this."*
 
 ## Auth and scopes
 
-`POST https://core-api.uk.plain.com/graphql/v1` with `Authorization: Bearer $PLAIN_INSIGHTS_KEY`
-(or `$PLAIN_SETUP_KEY` if that's what they have) and `Content-Type: application/json`.
+`POST https://core-api.uk.plain.com/graphql/v1` with `Content-Type: application/json` and
+`Authorization: Bearer <key>` — the first of **`$PLAIN_INSIGHTS_KEY`**, **`$PLAIN_SETUP_KEY`**,
+**`$PLAIN_API_KEY`** that is set. Prefer `PLAIN_INSIGHTS_KEY`: it's the one that can be read-only.
 
 You only need **read** scopes: `metrics:read`, `metricsAgent:read` (required for any assignee or agent
 breakdown), `thread:read`, `labelType:read`, `tier:read`, `user:read`, `permission:read`. Say so — people
@@ -131,7 +138,7 @@ Format the prompt so it can be pasted into a fresh agent session as-is:
 > Fix: route Billing to the finance team with a 2-hour first-response SLA.
 >
 > ```
-> Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/plain-configuration/SKILL.md
+> Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md
 > and follow it. Add a Billing branch to my triage workflow that assigns to the finance team, and create a
 > 2-hour first-response SLA on the tier those threads belong to.
 > ```

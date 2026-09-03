@@ -1,0 +1,13 @@
+{
+  "name": "plain-configuration",
+  "displayName": "Plain Configuration",
+  "version": "0.1.0",
+  "description": "Applies a Plain workspace configuration over the GraphQL API. Takes an agreed config spec, validates it, creates everything in the correct dependency order, verifies each result, and reports what was built plus what still needs a human click. Called by the onboarding skill for new workspaces and by the tuning skill for changes to existing ones.",
+  "author": {
+    "name": "Plain",
+    "email": "support@plain.com"
+  },
+  "license": "MIT",
+  "keywords": ["cursor", "plugin", "skills", "plain"],
+  "logo": "./assets/logo.svg"
+}

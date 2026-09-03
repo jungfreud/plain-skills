@@ -1,0 +1,13 @@
+{
+  "name": "plain-onboarding",
+  "displayName": "Plain Onboarding",
+  "version": "0.1.0",
+  "description": "Designs and builds a new Plain workspace end-to-end in one conversation — tiers, SLAs, business hours, labels, tenant/thread fields, workflows, help center migration, Ari knowledge sources, Sidekick, team invites. Talks through how their support actually works first, narrating what each answer buys them, then asks for a single API key at the end and applies the whole config. Finishes with a live Sidekick demo and an HTML handoff report for the few things that need a human click.",
+  "author": {
+    "name": "Plain",
+    "email": "support@plain.com"
+  },
+  "license": "MIT",
+  "keywords": ["cursor", "plugin", "skills", "plain"],
+  "logo": "./assets/logo.svg"
+}

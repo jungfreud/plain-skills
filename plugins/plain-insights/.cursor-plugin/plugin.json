@@ -1,0 +1,13 @@
+{
+  "name": "plain-insights",
+  "displayName": "Plain Insights",
+  "version": "0.1.0",
+  "description": "Pulls real support performance data from Plain's API — CSAT, first response time, resolution time, SLA compliance, AI vs human handling — broken down by label, assignee, tier and channel. Builds an HTML dashboard, then produces recommendations where each one ships with a copy-paste prompt that calls the configuration skill to implement it. Read-only.",
+  "author": {
+    "name": "Plain",
+    "email": "support@plain.com"
+  },
+  "license": "MIT",
+  "keywords": ["cursor", "plugin", "skills", "plain"],
+  "logo": "./assets/logo.svg"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "plain-workspace",
+  "displayName": "Plain Workspace",
+  "version": "0.1.0",
+  "description": "Design, build and improve a Plain workspace over the GraphQL API — tiers, SLAs, labels, custom fields, AI triage and routing, help center, Sidekick, webhooks — plus read-only performance insights.",
+  "author": {
+    "name": "Plain",
+    "email": "support@plain.com"
+  },
+  "homepage": "https://www.plain.com/docs",
+  "repository": "https://github.com/jungfreud/plain-skills",
+  "license": "MIT",
+  "keywords": ["plain", "customer-support", "graphql", "onboarding", "configuration", "analytics"]
+}
