@@ -178,14 +178,23 @@ anything** — don't ask which tool it is if they've already told you.
 | Triggers / automations / rules | Rebuilt as one triage workflow — they don't port |
 | Agents / users | **Invites are a human task.** You cannot invite anyone. |
 
-**State the "does not migrate" list out loud, early, before they've committed** — not when they trip over
-it. The big one is **historical tickets**: there is no bulk ticket import, so their ticket history,
-attachments, internal notes and audit trail stay in the old tool. Most teams keep the old instance on a
-read-only or cheap plan for their retention period, and for anyone regulated that's a compliance decision
-rather than a support one, so tell them to check with whoever owns retention before cancelling anything.
-Also not migrating: the *action* half of macros (auto-assign, auto-status — only the text comes across),
-template variables from the old tool (they won't resolve, and you must never silently mangle them), and
-per-team business hours (Plain has one set per workspace).
+**Their history comes across — lead with that, it's the thing they're most worried about.** Plain has
+built-in importers for Zendesk, Intercom and Front that bring over the full support history: tickets
+become threads, end users become customers, tags become labels, internal notes are preserved, and every
+thread and message keeps its original timestamp. Importing does **not** trigger SLAs, auto-responses or
+workflows, so nothing goes out to customers and no clocks start on old tickets.
+
+**Check for a built-in importer first** (`https://www.plain.com/docs/product/integrations/zendesk`, and
+the equivalents for Intercom and Front) and point them at it rather than improvising a mapping from a CSV
+export. If they're on a tool with no built-in importer, a custom import is still possible via
+`importThread` + `importThreadMessages` — see the reference — which preserves timestamps, authors and
+attachments and is idempotent on `externalId`. That's an engineering task, not something to knock out
+mid-conversation, so scope it honestly rather than promising it inside this session.
+
+**Then state what genuinely doesn't come across**, early, before they've committed — not when they trip
+over it: CSAT ratings and custom fields on tickets, the *action* half of macros (auto-assign, auto-status;
+only the text migrates), template variables from the old tool (they won't resolve, and you must never
+silently mangle them), and per-team business hours (Plain has one set per workspace).
 
 **Macros deserve care.** Saved-reply text is often compliance-reviewed and legally reviewed. Migrate it
 **verbatim** — never paraphrase or tidy it. Where a macro contains old-tool placeholders like

@@ -664,6 +664,37 @@ Scopes: `tenant:create/read/delete`, `tenantField:create/update/read/delete`. Ti
 
 ---
 
+## 16. Importing history from another help desk
+
+**Historical tickets can be migrated** — check for a built-in importer before writing any code. Plain has
+importers for **Zendesk, Intercom and Front** which bring across tickets → threads, end users → customers,
+tags → labels, internal notes, and the original timestamps on every thread and message. Not imported: CSAT
+ratings and custom fields on tickets.
+
+For a source with no built-in importer, import through the API. Two steps, in order:
+
+```graphql
+# 1. create the thread with its original metadata and timestamp
+mutation { importThread(input: { ... }) { thread { id } error { message code } } }
+
+# 2. add the conversation history to it
+mutation { importThreadMessages(input: { ... }) { error { message code } } }
+```
+
+- Both are **idempotent on `externalId`** — re-running skips duplicates and returns `NOOP`.
+- Imported threads **do not trigger SLAs, auto-responses or workflows**, and carry import provenance. So a
+  migration never emails a customer and never starts a clock on an old ticket.
+- `statusDetail.type` must match `status`: `TODO` → `NEW_REPLY` | `IN_PROGRESS`; `SNOOZED` →
+  `WAITING_FOR_CUSTOMER`; `DONE` → `DONE_MANUALLY_SET` | `IGNORED`.
+- If you pass a `tenantId`, the customer must already be a member of that tenant or the import fails.
+- Scopes: **`thread:import`**, plus `attachment:create` for attachments. Note `thread:import` is *not* in
+  the standard configuration scope list — add it when a migration is in scope.
+- Related: `importThreadDiscussion`, `importCustomers`, `importTenants`, and `createImportSync` /
+  `importJobs` / `importJobDefinition` for managed import jobs.
+
+Full docs: `https://www.plain.com/docs/graphql/threads/import` and
+`https://www.plain.com/docs/graphql/custom-ticket-importer`.
+
 ## Permission scopes
 
 An Admin-preset key carries roughly 390 scopes. The ones this configuration flow uses:
