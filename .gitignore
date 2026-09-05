@@ -1,2 +1,8 @@
 .DS_Store
 *.local
+.plain-setup.env
+plain-workspace-config.*
+plain-setup-record.*
+plain-handoff.html
+plain-insights.html
+__pycache__/

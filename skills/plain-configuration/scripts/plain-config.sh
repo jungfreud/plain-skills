@@ -2,9 +2,9 @@
 # Plain Config CLI - configure a Plain workspace via the GraphQL API
 # Requires: PLAIN_API_KEY environment variable, curl, jq
 #
-# Companion to team-plain/skills' plain-api.sh, which covers reading support data.
-# This one covers writes: tiers, SLAs, business hours, labels, fields, workflows,
-# views, help center, knowledge sources and webhooks.
+# Companion to team-plain/plain-support for reading support data.
+# Wraps common configuration operations, Sidekick skills and workflow discovery.
+# Unwrapped verified operations can use request with query/variables files.
 #
 # Every command prints the raw JSON response. Mutations surface `error` — always
 # check it. Commands that the API validates strictly are wrapped here so the
@@ -21,13 +21,51 @@ check_deps() {
 }
 
 gql() {
-    local query="$1"
-    local variables="${2:-}"
+    local query="$1" variables="${2:-}" response status=0
     [ -n "$variables" ] || variables='{}'
-    curl -s -X POST "$API_URL" \
+    response=$(curl -sS --fail-with-body --connect-timeout 10 --max-time 60 -X POST "$API_URL" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $PLAIN_API_KEY" \
-        -d "$(jq -n --arg q "$query" --argjson v "$variables" '{query: $q, variables: $v}')"
+        -d "$(jq -n --arg q "$query" --argjson v "$variables" '{query: $q, variables: $v}')") || status=$?
+    printf '%s\n' "$response"
+    [ "$status" -eq 0 ] || return "$status"
+    printf '%s' "$response" | jq -e 'type == "object" and (has("data") or has("errors"))' >/dev/null \
+        || { echo "Error: API returned an invalid GraphQL response" >&2; return 1; }
+    if printf '%s' "$response" | jq -e '
+        ((.errors // []) | length > 0) or
+        ([.data[]? | objects | .error? | select(. != null)] | length > 0)' >/dev/null; then
+        echo "Error: API operation failed; inspect the returned errors/error fields" >&2
+        return 1
+    fi
+}
+
+# Aggregate a connection without pretending the first page is the entire workspace.
+connection() {
+    local root="$1" query="$2" after=null page next all='[]'
+    while :; do
+        page=$(gql "$query" "$(jq -nc --argjson a "$after" '{after:$a}')") || { printf '%s\n' "$page"; return 1; }
+        printf '%s' "$page" | jq -e --arg r "$root" \
+            '.data[$r] | (.edges | type == "array") and (.pageInfo.hasNextPage | type == "boolean")' >/dev/null \
+            || die "Missing connection data for $root; inventory is incomplete"
+        all=$(printf '%s\n%s\n' "$all" "$page" | jq -sc --arg r "$root" '.[0] + .[1].data[$r].edges')
+        [ "$(printf '%s' "$page" | jq -r --arg r "$root" '.data[$r].pageInfo.hasNextPage')" = true ] || break
+        next=$(printf '%s' "$page" | jq -c --arg r "$root" '.data[$r].pageInfo.endCursor')
+        [ "$next" != null ] && [ "$next" != "$after" ] || die "Pagination did not advance for $root"
+        after="$next"
+    done
+    printf '%s\n%s\n' "$all" "$page" | jq -sc --arg r "$root" \
+        '{data:{($r):{edges:.[0],pageInfo:.[1].data[$r].pageInfo}}}'
+}
+
+request() {
+    [ -f "${1:-}" ] || die "request: query file required"
+    local variables='{}'
+    if [ -n "${2:-}" ]; then
+        [ -f "$2" ] || die "request: variables file not found"
+        variables=$(cat "$2")
+        printf '%s' "$variables" | jq -e 'type == "object"' >/dev/null || die "Variables must be a JSON object"
+    fi
+    gql "$(cat "$1")" "$variables"
 }
 
 die() { echo "Error: $*" >&2; exit 1; }
@@ -47,23 +85,50 @@ permissions() {
 # Everything that exists already. Run before building to avoid duplicates and
 # to catch workflows that will fire alongside anything you add.
 audit() {
-    gql 'query {
-      myWorkspace { id name }
-      tiers(first: 50) { edges { node { id name externalId } } }
-      labelTypes(first: 100) { edges { node { id name isExcludedFromAi } } }
-      threadFieldSchemas(first: 50) { edges { node { id key label } } }
-      workflows(first: 50) { edges { node { id name publishedAt { iso8601 } } } }
-      savedThreadsViews(first: 50) { edges { node { id name } } }
-      helpCenters(first: 10) { edges { node { id publicName } } }
-      users(first: 50) { edges { node { id publicName } } }
-    }'
+    local out part root selection
+    out=$(workspace) || { printf '%s\n' "$out"; return 1; }
+    for root in tiers labelTypes threadFieldSchemas workflows savedThreadsViews helpCenters users; do
+        case "$root" in
+            tiers) part=$(tier_list) || { printf '%s\n' "$part"; return 1; } ;;
+            labelTypes) part=$(label_list) || { printf '%s\n' "$part"; return 1; } ;;
+            workflows) part=$(workflow_list) || { printf '%s\n' "$part"; return 1; } ;;
+            users) part=$(users) || { printf '%s\n' "$part"; return 1; } ;;
+            *)
+                case "$root" in
+                    threadFieldSchemas) selection='id key label' ;;
+                    savedThreadsViews) selection='id name' ;;
+                    helpCenters) selection='id publicName' ;;
+                esac
+                part=$(connection "$root" "query(\$after: String) { $root(first: 50, after: \$after) { edges { node { $selection } } pageInfo { hasNextPage endCursor } } }") || { printf '%s\n' "$part"; return 1; } ;;
+        esac
+        out=$(printf '%s\n%s\n' "$out" "$part" | jq -sc '.[1] as $b | .[0] | .data += $b.data')
+    done
+    printf '%s\n' "$out"
 }
 
-users()  { gql 'query { users(first: 100) { edges { node { id publicName } } } }'; }
+users() {
+    connection users 'query($after: String) { users(first: 100, after: $after) {
+      edges { node { id publicName email isDeleted labels { labelType { id name type } } } }
+      pageInfo { hasNextPage endCursor } } }'
+}
 
-# A team in Plain is a label type of kind TEAM — there is no separate teams query.
-teams()  { gql 'query { labelTypes(first: 100) { edges { node { id name type } } } }' \
-             | jq '{data:{teams:[.data.labelTypes.edges[].node | select(.type=="TEAM")]}}'; }
+teams() { label_list | jq '{data:{teams:[.data.labelTypes.edges[].node | select(.type=="TEAM")]}}'; }
+
+team_add_member() {
+    local team="" user=""
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --team) team="$2"; shift 2 ;;
+            --user) user="$2"; shift 2 ;;
+            *) die "team add-member: unknown option $1" ;;
+        esac
+    done
+    [ -n "$team" ] && [ -n "$user" ] || die "team add-member: --team and --user required"
+    gql 'mutation($i: AddLabelsToUserInput!) { addLabelsToUser(input: $i) {
+      user { id publicName labels { labelType { id name type } } }
+      error { message code fields { field message } } } }' \
+      "$(jq -nc --arg t "$team" --arg u "$user" '{i:{entityId:$u,labelTypeIds:[$t]}}')"
+}
 
 # ============================================================================
 # LABELS
@@ -82,7 +147,7 @@ label_create() {
             --external-id) external="$2"; shift 2 ;;
             --ai-managed)  exclude=false; shift ;;
             --team)        kind="TEAM"; shift ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$name" ] || die "label create: --name is required"
@@ -102,7 +167,8 @@ label_create() {
 }
 
 label_list() {
-    gql 'query { labelTypes(first: 100) { edges { node { id name type icon isExcludedFromAi } } } }'
+    connection labelTypes 'query($after: String) { labelTypes(first: 100, after: $after) {
+      edges { node { id name externalId type icon isExcludedFromAi } } pageInfo { hasNextPage endCursor } } }'
 }
 
 # ============================================================================
@@ -118,7 +184,7 @@ tier_create() {
             --color)            color="$2"; shift 2 ;;
             --default-priority) priority="$2"; shift 2 ;;
             --default)          is_default=true; shift ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$name" ] || die "tier create: --name is required"
@@ -130,7 +196,8 @@ tier_create() {
            '{i:{name:$n, externalId:$e, color:$c, defaultThreadPriority:$p, memberIdentifiers:[], isDefault:$d}}')"
 }
 
-tier_list() { gql 'query { tiers(first: 50) { edges { node { id name externalId } } } }'; }
+tier_list() { connection tiers 'query($after: String) { tiers(first: 50, after: $after) {
+  edges { node { id name externalId } } pageInfo { hasNextPage endCursor } } }'; }
 
 # One SLA record holds EITHER a first-response OR a next-response target, never
 # both, and breachActions cannot be empty. Both rules are enforced here.
@@ -144,7 +211,7 @@ sla_create() {
             --priorities)     priorities="$2"; shift 2 ;; # e.g. "0,1"
             --warn-minutes)   warn="$2"; shift 2 ;;
             --round-the-clock) bh=false; shift ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$tier" ]    || die "sla create: --tier <tier_id> is required"
@@ -183,13 +250,13 @@ hours_set() {
             --close)    close="$2"; shift 2 ;;
             --days)     days="$2"; shift 2 ;;
             --force)    force=true; shift ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$tz" ] || die "hours set: --timezone is required (e.g. Europe/London)"
 
     local existing
-    existing=$(hours_get | jq '.data.businessHoursSlots | length')
+    existing=$(hours_get | jq -e '.data.businessHoursSlots | if type == "array" then length else error("Missing business hours") end') || return 1
     if [ "$existing" != "0" ] && [ "$force" != true ]; then
         echo "Refusing to overwrite $existing existing business-hours slot(s)." >&2
         echo "This call REPLACES the whole set. Review them, then re-run with --force:" >&2
@@ -221,7 +288,7 @@ threadfield_create() {
             --values)      enum_values="$2"; shift 2 ;;
             --required)    required=true; shift ;;
             --no-autofill) autofill=false; shift ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$label" ] || die "threadfield create: --label is required"
@@ -252,7 +319,7 @@ workflow_create() {
             --events) events="$2"; shift 2 ;;
             --cron)   cron="$2"; type="schedule"; shift 2 ;;
             --manual) type="manual"; shift ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$name" ] || die "workflow create: --name is required"
@@ -276,13 +343,16 @@ step_action() {
             --workflow) wf="$2"; shift 2 ;;
             --name)     name="$2"; shift 2 ;;
             --payload)  payload="$2"; shift 2 ;;
+            --payload-file) [ -f "$2" ] || die "Payload file not found"; payload=$(cat "$2"); shift 2 ;;
             --next)     next="\"$2\""; shift 2 ;;
             --x) x="$2"; shift 2 ;;
             --y) y="$2"; shift 2 ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$wf" ] && [ -n "$payload" ] || die "step action: --workflow and --payload are required"
+    printf '%s' "$payload" | jq -e 'type == "object" and (.type | type == "string") and (.version | type == "number")' >/dev/null \
+        || die "Step payload must be a JSON object with a type and version"
     gql 'mutation($i: CreateWorkflowStepInput!) { createWorkflowStep(input: $i) {
            workflowStep { id type transitions } error { message code fields { field message } } } }' \
         "$(jq -n --arg w "$wf" --arg n "${name:-action}" --arg p "$payload" \
@@ -302,7 +372,7 @@ step_switch() {
             --transitions) transitions="$2"; shift 2 ;;    # comma-separated step ids, fallback last
             --x) x="$2"; shift 2 ;;
             --y) y="$2"; shift 2 ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$wf" ] && [ -n "$prompts_file" ] && [ -n "$transitions" ] \
@@ -310,7 +380,8 @@ step_switch() {
     [ -f "$prompts_file" ] || die "step switch: prompts file not found: $prompts_file"
 
     local n_prompts n_trans payload trans_json
-    n_prompts=$(grep -cve '^[[:space:]]*$' "$prompts_file")
+    n_prompts=$(jq -Rs 'split("\n") | map(select(test("[^\\s]"))) | length' < "$prompts_file")
+    [ "$n_prompts" -gt 0 ] || die "step switch: at least one nonblank prompt required"
     trans_json=$(jq -n --arg t "$transitions" '$t | split(",")')
     n_trans=$(echo "$trans_json" | jq 'length')
     [ "$n_trans" -eq $((n_prompts + 1)) ] \
@@ -318,7 +389,7 @@ step_switch() {
 
     payload=$(jq -Rsc --argjson v 1 '
         {version:$v, type:"else_if",
-         conditions: (split("\n") | map(select(length>0)) |
+         conditions: (split("\n") | map(select(test("[^\\s]"))) |
                       map({version:1, type:"ai_workflow_rule_condition", prompt:.}))}' < "$prompts_file")
     gql 'mutation($i: CreateWorkflowStepInput!) { createWorkflowStep(input: $i) {
            workflowStep { id transitions } error { message code fields { field message } } } }' \
@@ -333,7 +404,7 @@ workflow_publish() {
         case $1 in
             --workflow) wf="$2"; shift 2 ;;
             --start)    start="$2"; shift 2 ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$wf" ] && [ -n "$start" ] || die "workflow publish: --workflow and --start <step_id> are required"
@@ -351,7 +422,8 @@ workflow_unpublish() {
 }
 
 workflow_list() {
-    gql 'query { workflows(first: 50) { edges { node { id name trigger publishedAt { iso8601 } startStepId } } } }'
+    connection workflows 'query($after: String) { workflows(first: 50, after: $after) {
+      edges { node { id name trigger publishedAt { iso8601 } startStepId } } pageInfo { hasNextPage endCursor } } }'
 }
 
 # Which branch did the AI take? This is the tuning loop.
@@ -397,7 +469,7 @@ view_create() {
             --labels)     labels="$2"; shift 2 ;;
             --sort)       sort_field="$2"; shift 2 ;;
             --sort-dir)   sort_dir="$2"; shift 2 ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$name" ] || die "view create: --name is required"
@@ -436,7 +508,7 @@ knowledge_add() {
         case $1 in
             --url)  url="$2"; shift 2 ;;
             --page) type="URL"; shift ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$url" ] || die "knowledge add: --url is required"
@@ -459,7 +531,7 @@ test_thread() {
             --customer) customer="$2"; shift 2 ;;
             --title)    title="$2"; shift 2 ;;
             --body)     body="$2"; shift 2 ;;
-            *) shift ;;
+            *) die "Unknown option: $1" ;;
         esac
     done
     [ -n "$customer" ] && [ -n "$title" ] || die "test thread: --customer and --title are required"
@@ -474,9 +546,93 @@ thread_state() {
     [ -n "${1:-}" ] || die "thread state: <thread_id> required"
     gql 'query($t: ID!) { thread(threadId: $t) {
            id title priority
-           assignedTo { __typename ... on User { publicName } }
+           assignedTo { __typename ... on User { id publicName } ... on MachineUser { id name } }
            labels { labelType { name } createdBy { __typename ... on SystemActor { systemId } } } } }' \
         "$(jq -n --arg t "$1" '{t:$t}')"
+}
+
+# Sidekick custom skills: returned name is the authoritative invocation slug.
+skill_list() {
+    gql 'query { sidekickSkills { name displayName description isEnabled
+      ... on CustomSidekickSkill { customSkillId } } }'
+}
+
+skill_get() {
+    [ -n "${1:-}" ] || die "skill get: custom skill ID required"
+    gql 'query($id: ID!) { sidekickCustomSkill(id: $id) {
+      id name displayName description instructions isEnabled } }' \
+      "$(jq -nc --arg id "$1" '{id:$id}')"
+}
+
+skill_write() {
+    local mode="$1" id="" display="" desc="" file="" enabled=""; shift
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --id) id="$2"; shift 2 ;;
+            --display-name) display="$2"; shift 2 ;;
+            --description) desc="$2"; shift 2 ;;
+            --instructions-file) file="$2"; shift 2 ;;
+            --enable) enabled=true; shift ;;
+            --disable) enabled=false; shift ;;
+            *) die "skill $mode: unknown option $1" ;;
+        esac
+    done
+    local input='{}'
+    [ -z "$display" ] || input=$(jq -nc --argjson i "$input" --arg v "$display" '$i + {displayName:$v}')
+    [ -z "$desc" ] || input=$(jq -nc --argjson i "$input" --arg v "$desc" '$i + {description:$v}')
+    if [ -n "$file" ]; then
+        [ -s "$file" ] || die "skill $mode: instructions file must exist and be nonempty"
+        input=$(jq -nc --argjson i "$input" --rawfile v "$file" '$i + {instructions:$v}')
+    fi
+    if [ "$mode" = create ]; then
+        [ -n "$display" ] && [ -n "$desc" ] && [ -n "$file" ] || die "skill create: display name, description and instructions file required"
+        [ -z "$id" ] && [ -z "$enabled" ] || die "skill create: use skill update for ID/enablement"
+        gql 'mutation($i: CreateSidekickCustomSkillInput!) { createSidekickCustomSkill(input: $i) {
+          customSkill { id name displayName description instructions isEnabled }
+          error { message code fields { field message } } } }' "$(jq -nc --argjson i "$input" '{i:$i}')"
+    else
+        [ -n "$id" ] || die "skill update: --id required"
+        [ "$input" != '{}' ] || [ -n "$enabled" ] || die "skill update: no changes supplied"
+        input=$(jq -nc --argjson i "$input" --arg id "$id" '$i + {customSkillId:$id}')
+        [ -z "$enabled" ] || input=$(jq -nc --argjson i "$input" --argjson e "$enabled" '$i + {isEnabled:$e}')
+        gql 'mutation($i: UpdateSidekickCustomSkillInput!) { updateSidekickCustomSkill(input: $i) {
+          customSkill { id name displayName description instructions isEnabled }
+          error { message code fields { field message } } } }' "$(jq -nc --argjson i "$input" '{i:$i}')"
+    fi
+}
+
+integrations() {
+    local services mcps
+    services=$(connection serviceAuthorizations 'query($after: String) {
+      serviceAuthorizations(first: 100, after: $after) { edges { node {
+        id status serviceIntegration { key name } } } pageInfo { hasNextPage endCursor } } }') || { printf '%s\n' "$services"; return 1; }
+    mcps=$(gql 'query { sidekickMcpServers { id name slug isConnected tools { name displayName description } } }') || { printf '%s\n' "$mcps"; return 1; }
+    jq -nc --argjson s "$services" --argjson m "$mcps" '$s | .data += $m.data'
+}
+
+policies() { gql 'query { agentSandboxToolPolicies { service op displayName mode factoryDefault isOverride } }'; }
+
+workflow_get() {
+    [ -n "${1:-}" ] || die "workflow get: ID required"
+    gql 'query($id: ID!) { workflow(workflowId: $id) {
+      id name trigger startStepId publishedAt { iso8601 }
+      steps { id type name payload transitions positionX positionY } } }' \
+      "$(jq -nc --arg id "$1" '{id:$id}')"
+}
+
+workflow_templates() { gql 'query { workflowTemplateGallery { id title tags } }'; }
+
+workflow_template() {
+    [ -n "${1:-}" ] || die "workflow template: ID required"
+    gql 'query($id: ID!) { workflowTemplate(templateId: $id) { id title
+      workflows { name trigger startStepId steps { id type name payload transitions positionX positionY } } } }' \
+      "$(jq -nc --arg id "$1" '{id:$id}')"
+}
+
+workflow_capabilities() {
+    gql 'query($t: WorkflowTriggerType!) { workflowCapabilities(triggerType: $t) {
+      hasConditionSupport hasWaitSupport allowedActionTypes } }' \
+      "$(jq -nc --arg t "${1:-EVENTS}" '{t:$t}')"
 }
 
 usage() {
@@ -486,12 +642,13 @@ plain-config.sh — configure a Plain workspace
   workspace                       which workspace this key points at
   permissions                     what this key can do
   audit                           everything already configured (run before building)
-  users                           real user IDs for assignment
+  users                           real user IDs, emails and team labels (all pages)
   teams                           routing teams (TEAM-kind label types)
 
   label create --name X [--icon slug] [--color #hex] [--ai-managed] [--team]
                                   --team makes a routing team (teams ARE label types)
   label list
+  team add-member --team LABEL_ID --user USER_ID
 
   tier create --name X [--external-id x] [--default] [--default-priority 0-3]
   tier list
@@ -504,11 +661,15 @@ plain-config.sh — configure a Plain workspace
   threadfield create --label X [--key k] [--type ENUM] [--values a,b,c] [--required]
 
   workflow create --name X [--events a,b | --cron "0 9 * * MON" | --manual]
-  step action --workflow ID --payload JSON [--next STEP_ID] [--name X]
+  step action --workflow ID --payload JSON|--payload-file FILE [--next STEP_ID] [--name X]
   step switch --workflow ID --prompts FILE --transitions id1,id2,...,fallback
   workflow publish --workflow ID --start STEP_ID
   workflow unpublish ID
   workflow list
+  workflow get ID
+  workflow templates
+  workflow template ID
+  workflow capabilities [EVENTS|MANUAL|SCHEDULE]
   workflow runs ID                which branch matched — the tuning loop
 
   payload apply-labels lt_1,lt_2  emit step payloads
@@ -522,18 +683,42 @@ plain-config.sh — configure a Plain workspace
   test thread --customer c_... --title "..." [--body "..."]
   thread state th_...
 
-Every command prints raw JSON. Always check `.data.<op>.error` before assuming success.
+  skill list
+  skill get CUSTOM_SKILL_ID
+  skill create --display-name NAME --description TEXT --instructions-file FILE
+  skill update --id ID [--display-name NAME] [--description TEXT] [--instructions-file FILE]
+               [--enable|--disable]
+  integrations                    built-in and custom MCP connection status
+  policies                        effective Sidekick action approvals
+  request QUERY_FILE [VARIABLES_FILE]
+
+Every API command prints raw JSON and exits nonzero on transport, GraphQL or mutation errors.
+Creating an object is not proof of live behavior; read back and test the intended path.
 USAGE
 }
 
-check_deps
 cmd="${1:-}"; shift || true
+case "$cmd" in ""|-h|--help|help) usage; exit 0 ;; esac
+if [ "$cmd" = payload ]; then
+    command -v jq >/dev/null || die "jq is required"
+else
+    check_deps
+fi
 case "$cmd" in
     workspace)   workspace ;;
     permissions) permissions ;;
     audit)       audit ;;
     users)       users ;;
     teams)       teams ;;
+    team) case "${1:-}" in add-member) shift; team_add_member "$@" ;; *) usage; exit 1 ;; esac ;;
+    integrations) integrations ;;
+    policies) policies ;;
+    request) request "$@" ;;
+    skill) case "${1:-}" in
+      list) skill_list ;;
+      get) shift; skill_get "$@" ;;
+      create|update) skill_write "$@" ;;
+      *) usage; exit 1 ;; esac ;;
     label)   case "${1:-}" in create) shift; label_create "$@" ;; list) label_list ;; *) usage; exit 1 ;; esac ;;
     tier)    case "${1:-}" in create) shift; tier_create "$@" ;; list) tier_list ;; *) usage; exit 1 ;; esac ;;
     sla)     case "${1:-}" in create) shift; sla_create "$@" ;; *) usage; exit 1 ;; esac ;;
@@ -544,6 +729,10 @@ case "$cmd" in
                  publish) shift; workflow_publish "$@" ;;
                  unpublish) shift; workflow_unpublish "$@" ;;
                  list) workflow_list ;;
+                 get) shift; workflow_get "$@" ;;
+                 templates) workflow_templates ;;
+                 template) shift; workflow_template "$@" ;;
+                 capabilities) shift; workflow_capabilities "$@" ;;
                  runs) shift; workflow_runs "$@" ;;
                  *) usage; exit 1 ;; esac ;;
     step)    case "${1:-}" in action) shift; step_action "$@" ;; switch) shift; step_switch "$@" ;; *) usage; exit 1 ;; esac ;;

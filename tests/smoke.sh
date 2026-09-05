@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
 # Read-only smoke test: does the live Plain API still match what the reference documents?
 #
-# Usage:  PLAIN_API_KEY=plainApiKey_xxx ./tests/smoke.sh
+# Usage: supply PLAIN_API_KEY securely, then ./tests/smoke.sh
 #
 # Only runs queries — no mutations, nothing created or changed. Safe against any workspace,
 # though a throwaway one is still the sensible choice.
 
 set -uo pipefail
+cd "$(dirname "$0")/.."
 
 : "${PLAIN_API_KEY:?Set PLAIN_API_KEY (do not paste the key into a chat)}"
-ENDPOINT="https://core-api.uk.plain.com/graphql/v1"
+ENDPOINT="${PLAIN_API_URL:-https://core-api.uk.plain.com/graphql/v1}"
 PASS=0
 FAIL=0
 
 command -v jq >/dev/null || { echo "jq is required"; exit 1; }
 
 q() {
-  curl -s -X POST "$ENDPOINT" \
+  curl -sS --fail-with-body --connect-timeout 10 --max-time 60 -X POST "$ENDPOINT" \
     -H "Authorization: Bearer $PLAIN_API_KEY" \
     -H "Content-Type: application/json" \
     --data "$(jq -nc --arg q "$1" '{query:$q}')"
@@ -25,7 +26,12 @@ q() {
 # check <name> <query> <jq-filter-that-must-be-non-null>
 check() {
   local name="$1" query="$2" filter="$3" out got
-  out=$(q "$query")
+  if ! out=$(q "$query"); then
+    printf '  FAIL  %s (transport/HTTP)\n' "$name"; FAIL=$((FAIL+1)); return
+  fi
+  if ! printf '%s' "$out" | jq -e 'type == "object" and ((.errors // []) | length == 0)' >/dev/null 2>&1; then
+    printf '  FAIL  %s (invalid response or GraphQL error)\n' "$name"; FAIL=$((FAIL+1)); return
+  fi
   got=$(printf '%s' "$out" | jq -r "$filter" 2>/dev/null)
   if [ -n "$got" ] && [ "$got" != "null" ]; then
     printf '  ok    %s\n' "$name"; PASS=$((PASS+1))
@@ -44,7 +50,7 @@ for u in "https://www.plain.com/docs/product/what-is-plain.md" \
          "https://www.plain.com/docs/llms.txt" \
          "https://www.plain.com/docs/graphql-reference/mutations/createTier.md" \
          "https://core-api.uk.plain.com/graphql/v1/schema.graphql"; do
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$u")
+  code=$(curl -sS --connect-timeout 10 --max-time 60 -o /dev/null -w '%{http_code}' "$u")
   if [ "$code" = "200" ]; then
     printf '  ok    %s\n' "$u"; PASS=$((PASS+1))
   else
@@ -101,6 +107,19 @@ for pair in \
 done
 
 echo
+echo "Sidekick configuration reads"
+check "Sidekick skills include invocation names and enablement" \
+  'query { sidekickSkills { name displayName isEnabled ... on CustomSidekickSkill { customSkillId } } }' '.data.sidekickSkills'
+check "Sidekick custom MCP status is readable" \
+  'query { sidekickMcpServers { id name isConnected tools { name } } }' '.data.sidekickMcpServers'
+check "Sidekick effective policies are readable" \
+  'query { agentSandboxToolPolicies { service op mode } }' '.data.agentSandboxToolPolicies'
+check "Workflow templates are readable for action payload discovery" \
+  'query { workflowTemplateGallery { id title } }' '.data.workflowTemplateGallery'
+check "Thread workflow capabilities are readable" \
+  'query { workflowCapabilities(triggerType: EVENTS) { allowedActionTypes } }' '.data.workflowCapabilities'
+echo
+
 echo "Configuration CLI"
 CLI="skills/plain-configuration/scripts/plain-config.sh"
 if [ -x "$CLI" ]; then
@@ -124,7 +143,7 @@ echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] || {
   echo
-  echo "A failure means either the API changed shape or a documentation endpoint the skills"
+  echo "A failure can mean missing permissions, an API shape change, or a documentation endpoint the skills"
   echo "rely on has moved. Please open an issue with the error above."
   exit 1
 }

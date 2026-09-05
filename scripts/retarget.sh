@@ -1,50 +1,32 @@
 #!/usr/bin/env bash
-# Point every cross-reference in this repo at a different owner/repo.
-#
-# The skills reference each other by URL so they work when fetched cold, which means
-# moving the repo means rewriting those URLs. This does it in one pass.
-#
-#   ./scripts/retarget.sh team-plain/skills
-#   ./scripts/retarget.sh team-plain/skills main
-#
-# Review with `git diff` before committing.
-
+# Rewrite this bundle's own repository links before relocation. Requires Python 3.
+# Usage: ./scripts/retarget.sh team-plain/repository [branch]
 set -euo pipefail
-
-TARGET="${1:-}"
-BRANCH="${2:-main}"
-
-if [ -z "$TARGET" ]; then
-  echo "usage: $0 <owner/repo> [branch]" >&2
-  echo "example: $0 team-plain/skills" >&2
-  exit 1
-fi
-
 cd "$(dirname "$0")/.."
-
-CURRENT=$(grep -rhoE 'raw\.githubusercontent\.com/[^/]+/[^/]+/' --include="*.md" . \
-          | head -1 | sed -E 's#raw\.githubusercontent\.com/([^/]+/[^/]+)/#\1#')
-
-if [ -z "$CURRENT" ]; then
-  echo "Could not determine the current owner/repo from the markdown files." >&2
-  exit 1
-fi
-
-echo "Retargeting: $CURRENT -> $TARGET (branch: $BRANCH)"
-
-FILES=$(git ls-files '*.md')
-for f in $FILES; do
-  # raw content URLs used by the skills to fetch each other
-  sed -i '' -E "s#raw\.githubusercontent\.com/[^/]+/[^/]+/[^/]+/#raw.githubusercontent.com/${TARGET}/${BRANCH}/#g" "$f"
-  # repo links (issues, browse)
-  sed -i '' -E "s#github\.com/[^/[:space:])]+/[^/[:space:])]+(/(issues|blob|tree)[^[:space:])]*)?#github.com/${TARGET}\1#g" "$f"
-  # skills.sh install line
-  sed -i '' -E "s#npx skills add [^[:space:]]+#npx skills add ${TARGET}#g" "$f"
-done
-
-echo
-echo "Rewritten. Remaining references to the old location (should be none):"
-grep -rn "$CURRENT" --include="*.md" . || echo "  none"
-echo
-echo "Now: git diff, then verify the new URLs resolve once pushed:"
-echo "  curl -s -o /dev/null -w '%{http_code}\\n' https://raw.githubusercontent.com/${TARGET}/${BRANCH}/plain-configuration/SKILL.md"
+python3 - "$@" <<'PY'
+import pathlib, re, subprocess, sys
+if len(sys.argv) not in (2, 3) or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', sys.argv[1]):
+    sys.exit('usage: retarget.sh <owner/repo> [branch]')
+target = sys.argv[1]
+branch = sys.argv[2] if len(sys.argv) == 3 else 'main'
+if not re.fullmatch(r'[A-Za-z0-9_./-]+', branch) or '..' in branch:
+    sys.exit('Invalid branch/ref')
+readme = pathlib.Path('README.md').read_text()
+match = re.search(r'raw\.githubusercontent\.com/([^/]+/[^/]+)/(.+?)/skills/', readme)
+if not match:
+    sys.exit('Cannot determine current bundle repository from README.md')
+current = match[1]
+files = subprocess.check_output(['git', 'ls-files', '-z', '*.md']).decode().split('\0')
+for name in filter(None, files):
+    p = pathlib.Path(name)
+    old = p.read_text()
+    # Match this repository only. Branches may contain slashes; /skills/ is the boundary.
+    new = re.sub(r'raw\.githubusercontent\.com/' + re.escape(current) + r'/.*?/skills/',
+                 'raw.githubusercontent.com/' + target + '/' + branch + '/skills/', old)
+    new = re.sub(r'github\.com/' + re.escape(current) + r'(?=[/\s)#]|$)', 'github.com/' + target, new)
+    new = new.replace('npx skills add ' + current, 'npx skills add ' + target)
+    if new != old:
+        p.write_text(new)
+        print(name)
+print('Retargeted ' + current + ' → ' + target + ' (' + branch + '). Review git diff before publishing.')
+PY

@@ -1,156 +1,108 @@
 ---
 name: plain-insights
-description: Audit a Plain workspace. Pulls response times, resolution times, CSAT, SLA compliance and AI-versus-human handling by label, assignee and tier, builds a dashboard, and turns each finding into a prompt that calls plain-configuration to fix it. Read-only.
+description: Review a period of Plain support activity and suggest better labels, routing and Sidekick investigations. Produce an evidence-backed HTML dashboard, and hand a selected improvement to plain-configuration in the same conversation.
 license: MIT
-compatibility: Requires curl, jq, and PLAIN_API_KEY environment variable
 metadata:
   author: plain
-  version: "0.1"
+  version: "0.2"
+  requires: curl, jq, a terminal, and a Plain API key
 allowed-tools: Bash Read Write WebFetch
 ---
 # Plain insights
 
-You turn a Plain workspace's history into a dashboard and a set of actionable recommendations. **You are
-read-only** — you never change configuration. When a finding implies a change, you hand back a
-copy-paste prompt that invokes the configuration skill, and the person decides whether to run it.
+Help an existing Plain customer understand what to improve in their support setup. Focus on useful
+changes: a missing label for recurring issues, a slow escalation route, a knowledge gap, or a Sidekick
+routine that can collect context before a human starts work. Analysis is read-only; a chosen change is
+applied by `plain-configuration` with its normal scope and verification in the same conversation.
 
-That handoff is the whole point. Analytics that stops at a chart makes someone else do the thinking;
-this ends with *"here's the fix, paste this."*
+## Start with a period and current context
 
-## Look it up — don't recall it
+Use the requested time range; otherwise default to the last 30 complete days and state exact dates and
+timezone. Ask about the goal only when it would change the analysis. Do not run a long onboarding
+interview or assume previous decisions are remembered. Read fresh data each time; do not create a
+scheduled job, background monitor or persistent decision history.
 
-**This skill deliberately doesn't carry facts about Plain.** Product facts go stale; Plain's docs don't.
-Anything specific — a field name, an enum value, a permission, what an importer covers, whether something
-is possible at all — comes from the docs at the moment you need it:
+Start with workspace identity and permissions. Use existing read access. For auth and helper setup, read
+`../plain-configuration/SKILL.md` (or the matching URL under the same repository/ref as this skill; main:
+`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md`).
+Use only its read commands during this phase; loading it is not permission to apply configuration.
 
-- `https://www.plain.com/docs/product/what-is-plain.md` — what Plain is, for anything conceptual
-- `https://www.plain.com/docs/llms.txt` — the full docs index (~1,000 pages, every one has a `.md`)
-- `https://www.plain.com/docs/graphql-reference/mutations/<name>.md` (or `/queries/<name>.md`) — a
-  specific operation's arguments and the permission it needs
-- `https://core-api.uk.plain.com/graphql/v1/schema.graphql` — exact input shapes and enum values
+Read current labels, teams/members, relevant published workflows and their conditions/actions, enabled
+Sidekick skills and their instructions, knowledge sources, and relevant connection status. A missing
+permission means “not visible,” not “not configured.” Paginate every collection used for an inventory.
 
-**If a customer asks you something about Plain, answer from the docs, not from memory** — and if you
-can't confirm something either way, say so instead of guessing. Never tell someone Plain can't do
-something just because you couldn't find it; that's how people end up making decisions on bad
-information. Look, then answer.
+Look up metric names, dimensions, filter shapes and thread-ID drilldowns in
+[Plain's docs index](https://www.plain.com/docs/llms.txt), the operation pages and
+[the schema](https://core-api.uk.plain.com/graphql/v1/schema.graphql). Never invent a metric or API field.
+Use the companion Plain Support Skill if installed for reading support conversations; otherwise consult
+the relevant Plain thread/timeline docs. Evidence collection for this audit is part of this task.
 
-Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
+## Questions worth answering
 
-**There's a companion skill for working with support data** — the Plain Support Skill
-(`npx skills add team-plain/plain-support`) reads customers, threads and timelines and drafts help-centre
-content. This one configures the workspace. If someone asks for something that's really the other job —
-"summarise this customer's history", "what are our open threads" — point them there rather than
-improvising.
+Select the few with sufficient data and a useful next action:
 
-## Auth and scopes
+- **Recurring topics with no useful label:** inspect a representative sample of threads as well as
+  existing labels; propose a new category only when it adds a distinct operational/reporting use.
+- **Slow responses, resolution or escalation:** examine P90 plus volume by category/team and relevant
+  tier/channel; inspect examples, routing and assignment history before diagnosing the bottleneck.
+- **Lost triage:** look at fallback volume, wrong assignments and workflow execution traces. Empty or
+  over-broad branches may need better conditions, but an intentionally rare security branch is not
+  redundant merely because it did not fire this month.
+- **Repeated engineering investigation:** check whether agents repeatedly collect the same logs, check
+  the same issue tracker, or request missing context. Suggest a tailored Sidekick skill that does that
+  preparation, with clear evidence and an appropriate owner.
+- **Knowledge gaps:** identify recurring answerable questions and missing/unclear source material;
+  recommend a source update or article draft, not unsupported automatic publication.
+- **Sidekick skill effectiveness, where measurable:** associate actual skill invocations with their
+  threads and outcomes only if those links are available. Compare like-for-like cohorts by category,
+  severity/channel and period, disclose sample sizes and selection effects. If the API cannot attribute
+  a session to a skill, say per-skill impact is not measurable from the available data.
+- **CSAT / SLA / workload:** use them when they explain a setup change. Present per-person data as a
+  routing/capacity question, not a performance ranking.
 
-`POST https://core-api.uk.plain.com/graphql/v1` with `Authorization: Bearer $PLAIN_API_KEY` (or
-whichever variable they've set) and `Content-Type: application/json`. Never read, print or echo the key.
+AI-handled vs overall metrics are not automatically AI vs human. Never subtract medians/percentiles to
+invent a human cohort. Use explicit cohorts or label the comparison accurately. Treat correlations as
+hypotheses, not proof that a skill caused faster resolution. Check duration units, coverage and sample
+sizes; below roughly 20 observations describe the examples without strong conclusions.
 
-**You need only read permissions**, which is worth saying out loud — people are rightly cautious handing
-an agent a key, and this one cannot change anything. Confirm what you actually hold with
-`myPermissions`, and if a metric is refused, the query's doc page states the permission it needs.
+## Recommendations that can be acted on
 
-Start with `myWorkspace` and `myPermissions` so you know whose data you're looking at and what's visible.
+For each of the top two or three recommendations provide:
 
-## The metric API
+1. **Finding:** actual number or observed theme, exact period, sample size and coverage.
+2. **Evidence:** thread links/IDs and relevant configuration or trace evidence; distinguish a sample
+   from a full-population count.
+3. **Proposed change:** specific label, workflow branch, routing change, knowledge update or Sidekick
+   skill. Describe what the skill should check and what it should produce.
+4. **Prerequisites and uncertainty:** tools, permissions and any alternative explanation for the issue.
+5. **Apply prompt:** enough context for plain-configuration to inspect the current setup and propose
+   the exact change, preserving existing behavior.
 
-Plain exposes thread metric queries for single values, time series and heatmaps, with grouping,
-filtering and configurable percentiles, plus a mode that returns the underlying thread IDs.
+Example hypothesis, only after collecting evidence: repeated Bug escalations wait for logs and related
+issues. Propose a Bug investigation routine that searches the connected Sentry/GitHub tools and prepares
+a Linear issue with reproduction and sources. Inspect existing issues to avoid duplicates, and preserve
+approval rules for issue creation. Explain this may reduce preparation time; do not promise it will fix
+resolution time without testing.
 
-**Get the current metric names, grouping dimensions and filter shapes from the docs or the schema — don't
-work from memory.** They change as Plain adds metrics, and a stale name is a failed query:
+Do not change a tier-wide SLA to address a category-specific delay without checking its other affected
+threads. Do not tighten an SLA merely to make a slow process appear fixed.
 
-- `https://www.plain.com/docs/llms.txt` → find the metric query pages
-- `https://www.plain.com/docs/graphql-reference/queries/<name>.md` → arguments and permission
-- `https://core-api.uk.plain.com/graphql/v1/schema.graphql` → the metric-name and dimension enums
+## Dashboard and same-conversation handoff
 
-Read the error's `fields` array when a metric call is rejected — these queries validate strictly and the
-error names the exact argument to fix, including requirements the schema doesn't advertise. Fix and retry
-rather than guessing at a different query.
+Produce a self-contained HTML file with inline styling and charts (SVG is sufficient), no external
+scripts/assets, no keys, and escaped source content. Give it an **Overview** and **Suggestions** tab,
+with keyboard-accessible controls. Headline the findings, period and data coverage. Add only charts that
+support them, showing units, percentile, sample sizes and appropriate comparisons. If there is little
+data, a short report with clearly limited observations is enough.
 
-Two things worth knowing structurally: **prefer percentiles over medians** when hunting for where
-customers actually suffer, because medians hide the tail; and where Plain offers an AI-handled variant of
-a metric alongside the overall one, comparing them is usually the most interesting chart a workspace has
-never seen.
+In Suggestions, include the evidence, proposed behavior, prerequisites and a copyable apply prompt.
+The file must not call APIs or run changes; it is a report. Never embed credentials. For a standalone
+prompt, use the matching configuration-skill URL and summarize the recommended scope in the text.
 
-Beyond metrics, look for the qualitative surfaces too — Plain surfaces recurring themes and gaps in
-customer knowledge, which turn directly into help-centre articles. Find them via the docs index.
+Ask which improvement they want to apply. If they choose one, load plain-configuration and pass the
+selected change and evidence **in this conversation**, retaining their authorization. It checks current
+state and shows the actual change before writing. If only a read key is available, explain the exact
+additional access needed at that point; do not request write access just to generate the dashboard.
 
-## What to actually look for
-
-Don't dump every metric. Go after the questions that lead somewhere:
-
-1. **Where is response slowest, and is it structural?** First-response time at P90, grouped by label.
-   **Use P90, not the median** — medians hide the tail where customers actually churn. A
-   category that's 10× the others usually has no routing rule or no owner.
-2. **Which categories hurt satisfaction?** CSAT grouped by label. Cross-reference
-   with resolution time; slow *and* unhappy is a different problem from slow but tolerated.
-3. **How does AI-handled compare to human-handled?** Plain's AI-handled metric variants against the
-   overall ones. The most interesting chart most workspaces have never seen, and it tells them whether to
-   widen or narrow the AI's remit.
-4. **Are SLAs actually being met, by tier?** SLA compliance grouped by tier. A tier
-   with an aspirational SLA nobody hits is worse than no SLA.
-5. **Is load lopsided across people?** Duration and volume grouped by assignee.
-   Frame this carefully — it's about routing and capacity, not ranking individuals.
-6. **What's falling through triage?** Volume of threads carrying the fallback label ("Needs triage", or
-   whatever they used). High volume means the classification tree has a gap.
-7. **Which triage branches are dead or over-broad?** Pull recent workflow executions and tally which
-   branch each one matched. A branch that never matches is a wasted prompt; one that catches everything
-   is too vague.
-8. **What should they write docs about?** Plain surfaces knowledge gaps and recurring thread themes; the
-   fix is usually a help-centre article, and Plain can draft one from a thread.
-9. **When does volume arrive?** A heatmap by hour and weekday, read against their business hours.
-
-## The dashboard
-
-Build a **self-contained HTML file** (no external assets beyond a CDN chart library or inline SVG) and
-tell them the path so they can open it.
-
-- Lead with the two or three findings that matter, not a wall of charts. A summary row of headline numbers
-  (P90 FRT, CSAT, SLA compliance, threads/week) then the supporting breakdowns.
-- Every chart needs the sample size next to it. "CSAT 60%" on five responses is noise, and presenting it
-  as signal destroys trust in the whole document.
-- Label axes with units and say which percentile you used. "9h" vs "9h (P90)" are different claims.
-- Comparisons beat absolutes: this label vs all labels, AI vs human, this month vs last.
-- If the data is too thin to conclude anything, **say that instead of decorating it**. A short honest
-  dashboard is worth more than a padded one.
-
-## The recommendations
-
-This is the part that earns the skill. For each recommendation give four things:
-
-1. **The finding**, in one sentence, with the number.
-2. **The evidence** — re-run the query in the mode that returns thread IDs and cite actual threads. A
-   recommendation that can't point at threads is a guess.
-3. **The suggested change**, concretely (which label, which tier, which prompt wording).
-4. **A copy-paste prompt** that calls the configuration skill to implement it.
-
-Format the prompt so it can be pasted into a fresh agent session as-is:
-
-> **Billing threads have a P90 first response of 9h 12m, against 41m across every other category** —
-> and Billing is the only category with no routing rule. 23 threads in the last 30 days
-> (`th_01ABC…`, `th_01DEF…`, …).
->
-> Fix: route Billing to the finance team with a 2-hour first-response SLA.
->
-> ```
-> Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md
-> and follow it. Add a Billing branch to my triage workflow that assigns to the finance team, and create a
-> 2-hour first-response SLA on the tier those threads belong to.
-> ```
-
-Order recommendations by expected impact, not by how easy they were to find. Three good ones beat twelve.
-
-## Guardrails
-
-- **Never invent or round-up a number.** Every figure comes from a query you actually ran. If a query
-  returned empty, say it returned empty.
-- **Respect small samples.** Below ~20 data points, describe rather than conclude, and say so explicitly.
-- **Don't recommend what you can't evidence.** No "consider improving response times" filler.
-- **Stay read-only.** If they ask you to change something, hand over the configuration-skill prompt
-  instead of doing it yourself — that keeps the write path in one place with its own confirmations.
-- **Be careful with per-person data.** Present it as routing and capacity insight; don't produce
-  something that reads as a performance ranking unless they've explicitly asked for that.
-- Frame AI vs human comparisons fairly — the AI usually takes the easier threads, so a better AI number
-  isn't automatically a mandate to widen its scope.
+After configuration returns, state what changed, what was verified and what remains pending. Update the
+report with the result if useful. If they only want the report, stop there.

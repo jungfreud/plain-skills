@@ -1,417 +1,164 @@
 ---
 name: plain-configuration
-description: Configure a Plain workspace. Create tiers, SLAs, business hours, labels, teams, custom fields, AI triage and routing workflows, saved views, help centers and knowledge sources. Applies a configuration in dependency order, verifies each step, and reports what still needs a human.
+description: Build or change a Plain workspace over its API, including AI labeling, team routing, workspace Sidekick skills and their invoking workflows. Use directly for a specific change, or to apply a design from plain-onboarding or plain-insights.
 license: MIT
-compatibility: Requires curl, jq, and PLAIN_API_KEY environment variable
 metadata:
   author: plain
-  version: "0.1"
+  version: "0.2"
+  requires: curl, jq, a terminal, and PLAIN_API_KEY
 allowed-tools: Bash Read Write WebFetch
 ---
 # Plain configuration
 
-You configure a Plain workspace over Plain's GraphQL API — tiers, SLAs, business hours, labels, custom
-fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks.
+Turn an agreed design into verified Plain configuration. A direct request should remain focused: build
+what was requested, ask only material missing questions, and leave unrelated settings alone. When called
+by onboarding or insights, carry forward the user's decisions and authorization in the same conversation.
 
-You'll be used two ways, and both are normal:
+## Load the build resources
 
-**Directly by a person.** They describe what they want in a sentence or two — *"AI triage that labels
-threads as Bug, Billing or Feature Request, routes bugs to engineering as high priority, and a 1-hour
-first response SLA for enterprise"*. Turn that into the config spec below, read it back for confirmation,
-then build it. Ask about anything genuinely ambiguous, but don't interview them — they came here to get it
-done. If they haven't mentioned something, leave it out rather than inventing requirements.
+Resolve `scripts/plain-config.sh` relative to **this skill's directory**, not the user's working directory.
+Set `PLAIN_CONFIG_CLI` to that absolute path and invoke it as `bash "$PLAIN_CONFIG_CLI" …`.
+Read [API.md](references/API.md) before API work and [CONFIG-SPEC.md](references/CONFIG-SPEC.md) when
+normalizing a design. Read [TRIAGE.md](references/TRIAGE.md) for Sidekick skills, inbound workflow design,
+Ari, and end-to-end verification.
 
-**Called by another skill**, typically [plain-onboarding](https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-onboarding/SKILL.md), which runs a
-guided conversation and hands you a finished spec. Then your job is purely to build it correctly.
-
-Either way: **build it, verify it, and be honest about what you couldn't do.**
-
-**Read the API reference before calling anything:**
-`https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/references/API.md`
-(or the sibling file `references/API.md` if you were installed as a bundle). It has the
-exact input shapes, the dependency order, and the behaviours that fail silently. Don't guess field names —
-if something isn't there, fetch the official per-operation doc at
-`https://www.plain.com/docs/graphql-reference/mutations/<name>.md`, which also states the permission
-required.
-
-## Quick Reference
-
-Use `scripts/plain-config.sh` rather than composing GraphQL by hand. It encodes the
-validation rules the API enforces, so calls succeed first time.
+If fetched as a standalone Markdown file, first obtain the supporting bundle. Derive the base from the
+URL of the SKILL.md actually loaded, retaining its owner, repository, and ref. Do not silently switch a
+review branch or pinned version to main. Example for the published main version:
 
 ```bash
-# Always start here — which workspace, what can this key do, what already exists
-scripts/plain-config.sh workspace
-scripts/plain-config.sh permissions
-scripts/plain-config.sh audit
-scripts/plain-config.sh users        # real user IDs for assignment
-scripts/plain-config.sh teams        # routing teams
+PLAIN_SKILL_BASE="https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration"
+PLAIN_SKILL_DIR=$(mktemp -d "${TMPDIR:-/tmp}/plain-configuration.XXXXXX")
+mkdir -p "$PLAIN_SKILL_DIR/scripts" "$PLAIN_SKILL_DIR/references"
+for file in scripts/plain-config.sh references/API.md references/CONFIG-SPEC.md references/TRIAGE.md; do
+  curl -fsSL --connect-timeout 10 --max-time 60 "$PLAIN_SKILL_BASE/$file" -o "$PLAIN_SKILL_DIR/$file" || exit 1
+done
+PLAIN_CONFIG_CLI="$PLAIN_SKILL_DIR/scripts/plain-config.sh"
 ```
 
-### Labels and teams
+Use the same downloaded files throughout the build. Stop if a required download fails; do not execute an
+error page or reconstruct a missing helper from memory. Check `curl` and `jq` before requesting a key.
+
+## Credentials and preflight
+
+Use `PLAIN_API_KEY` if already available; test its presence without printing it. Default endpoint:
+`https://core-api.uk.plain.com/graphql/v1`; `PLAIN_API_URL` can select the user's documented endpoint.
+
+If a key is needed, tell the person to create a temporary key in Plain's **Settings → Machine Users**.
+Derive the read/write permissions from the agreed operations using current docs/schema; if neither names
+them, verify the key with `myPermissions` and report the actual missing-scope error rather than inventing
+scope names. A temporary Admin key is an optional convenience, not a requirement. Read-only insight
+access does not authorize changing scopes or creating a new write key without the person supplying it.
+
+Ask the person to run this in **their own terminal**, never to paste the key into chat:
 
 ```bash
-scripts/plain-config.sh label create --name "Billing" --icon credit-card --color "#22C55E"
-scripts/plain-config.sh label create --name "Engineering" --icon users --team
-scripts/plain-config.sh label list
+bash -c 'umask 077; read -r -s -p "Plain API key: " plain_setup_key; printf "\n"; printf "export PLAIN_API_KEY=%q\n" "$plain_setup_key" > "$HOME/.plain-setup.env"; unset plain_setup_key'
 ```
 
-Labels default to being excluded from Plain's own AI triage, so your workflow stays
-authoritative. Pass `--ai-managed` to opt out. A **team is a label type of kind TEAM** —
-`--team` creates one, and its ID is what assignment steps point at.
+The input is hidden and is not a literal command in shell history. Source that protected file separately
+for each agent command, e.g. `source ~/.plain-setup.env && bash "$PLAIN_CONFIG_CLI" workspace`. Never cat
+it, print environment values, enable shell tracing, or place keys in scripts, reports or shell profiles.
+If the agent runs remotely and cannot see the file, use its supported secret-input mechanism; do not
+pretend a local export reaches it. If there is no usable terminal or credential mechanism, deliver the
+configuration design and explain the specific execution blocker without accepting a secret in chat.
 
-### Tiers and SLAs
+Run:
 
 ```bash
-scripts/plain-config.sh tier create --name "Enterprise" --default-priority 1
-scripts/plain-config.sh tier create --name "Standard" --default
-scripts/plain-config.sh sla create --tier tier_01ABC... --kind first --minutes 60 --priorities 0,1
-scripts/plain-config.sh sla create --tier tier_01ABC... --kind next  --minutes 240 --round-the-clock
+bash "$PLAIN_CONFIG_CLI" workspace
+bash "$PLAIN_CONFIG_CLI" permissions
+bash "$PLAIN_CONFIG_CLI" audit
+bash "$PLAIN_CONFIG_CLI" users
+bash "$PLAIN_CONFIG_CLI" teams
 ```
 
-One SLA record holds a first-response *or* a next-response target, never both — run it
-twice for both. A pre-breach warning is always attached; change it with `--warn-minutes`.
+Read back the workspace name and compare it to the intended target. Resolve any mismatch before writes.
+For Sidekick also read `skill list`, `integrations`, `policies`, and `workflow capabilities EVENTS`.
+`integrations` reports built-in service authorizations and custom MCPs separately. Connected status is a
+prerequisite, not proof that a particular repo/project/tool call succeeds.
 
-### Business hours
+## Plan changes against what exists
+
+Normalize the request using the config contract; show a compact **create / reuse / update / pending**
+summary, including workflow publication and future actions. Confirm unresolved choices once. An agreed
+onboarding spec already authorizes its ordinary implementation; do not ask again for every object.
+
+- Read all pages of relevant existing objects. The helper's list commands paginate; check continuation
+  on any custom query as well. Never conclude a team or workflow is absent from only the first page.
+- Match existing objects by recorded ID or unambiguous external ID/name. Read their actual configuration
+  before reusing or changing them. Multiple matches need resolution, not an arbitrary choice.
+- Check existing published workflows on the same trigger. Do not stack a second inbound classifier
+  without addressing the overlap. Preserve unrelated rules and explicit customer choices.
+- Resolve users by verified email/ID. **Teams are TEAM-kind label types**: use `label create --team`,
+  `team add-member`, and `teams`. A named team with no available members does not prove usable routing.
+- Check workflow/Sidekick payload support before promising the full build. The `TRIAGE.md` reference
+  describes obtaining exact JSON from a live workflow/template when the schema does not describe it.
+
+Keep a local, secret-free execution record with workspace ID, agreed objects, real IDs, changes, and
+verification results. After an interrupted or failed request, reconcile with live state before retrying
+any create: a timeout can mean the server succeeded. Resume missing work; do not replay the entire spec.
+This record is for the current setup/recovery, not ongoing customer memory or background monitoring.
+
+## Build in dependency order
+
+Create or reuse the dependencies selected in the spec:
+
+1. Users and teams/membership; category labels and fallback label.
+2. Requested tiers, SLAs, business hours, fields, and escalation paths.
+3. Knowledge sources; requested help-center/Ari settings.
+4. Sidekick child skills, then the parent skill referencing the **returned invocation names**.
+5. One inbound workflow: terminal investigation actions first, then assignment/priority/label actions,
+   the classifier and any prefilters, then set the start step and publish the agreed graph.
+6. Requested saved views, tenant data or other additional configuration.
+
+Use the CLI for covered operations; `bash "$PLAIN_CONFIG_CLI" help` lists them without requiring a key.
+It is a set of operation helpers, not a YAML-to-workspace installer. For uncovered operations, read the
+current operation docs/input types, then use the `request` command with a query and variables file.
+Do not mistake a field in the design contract for a supported CLI flag or API field.
 
 ```bash
-scripts/plain-config.sh hours get
-scripts/plain-config.sh hours set --timezone Europe/London --open 09:00 --close 17:30
+bash "$PLAIN_CONFIG_CLI" label create --name Bug --icon bug
+bash "$PLAIN_CONFIG_CLI" label create --name Engineering --team --icon users
+bash "$PLAIN_CONFIG_CLI" team add-member --team lt_REAL_TEAM --user u_REAL_USER
+bash "$PLAIN_CONFIG_CLI" skill create --display-name "Bug investigation" \
+  --description "Investigate product failures with the configured engineering tools." \
+  --instructions-file bug-investigation.md
+bash "$PLAIN_CONFIG_CLI" skill get REAL_CUSTOM_SKILL_ID
 ```
 
-This replaces the entire set, so it refuses to overwrite existing slots without `--force`.
-Always `hours get` first and show the customer what would be lost.
+Skills default to the approved investigation scope. Do not broaden workspace-wide tool policies to make
+a demo look autonomous. If a selected future action needs approval, preserve that policy and make the
+resulting pending action visible; change a policy only as a separately explained, authorized change.
 
-### Thread fields
+The helper exits nonzero for transport, HTTP, GraphQL and mutation errors while preserving structured
+API error details. Read the actual error and fields, correct a specific validation issue, and retry once.
+If still refused, record the blocker and continue only independent work. Do not guess new payload types,
+loop, or silently omit the final Sidekick step and call the workflow complete.
 
-```bash
-scripts/plain-config.sh threadfield create --label "Resolution reason" --type ENUM \
-  --values fixed,wontfix,duplicate,user_error
-```
+## Updates, publication and verification
 
-### Workflows
+Read back each important object, including full workflow graph and saved skill instructions. A successful
+API call alone does not prove the intended behavior. Follow the test procedure in `TRIAGE.md`.
 
-A workflow is four things: create a draft, add steps **leaf-first**, set the start step,
-publish. It does nothing until published.
+For existing Sidekick skills, `skill update` replaces the instruction body: read it first, preserve
+unrelated instructions, and show the substantive change. Build referenced child skills before updating
+the parent. A renamed skill can change its invocation name; use the API result and repair dependents.
 
-```bash
-# 1. draft
-WF=$(scripts/plain-config.sh workflow create --name "Inbound triage" | jq -r '.data.createWorkflow.workflow.id')
+For a live workflow, explain the unpublish/edit/republish window before changing it. Keep a snapshot of the
+old graph. If rebuilding fails, restore only the known old configuration when safe and authorized, or
+leave the workflow explicitly pending with the reason; never claim automatic rollback.
 
-# 2. terminal actions first — transitions need real step IDs.
-#    Chain within a branch using --next.
-ASSIGN=$(scripts/plain-config.sh step action --workflow $WF --name "assign" \
-          --payload "$(scripts/plain-config.sh payload assign-user u_01ABC...)" \
-          | jq -r '.data.createWorkflowStep.workflowStep.id')
-BUG=$(scripts/plain-config.sh step action --workflow $WF --name "label bug" \
-          --payload "$(scripts/plain-config.sh payload apply-labels lt_01BUG...)" \
-          --next $ASSIGN | jq -r '.data.createWorkflowStep.workflowStep.id')
+Show a concrete change for approval if it extends the agreed scope, publishes customer-facing content,
+enables automatic customer replies, changes action permissions, or replaces existing settings such as
+business hours. Honor authorization already given for the exact change; do not manufacture repeated gates.
 
-# 3. one prompt per line; N prompts need N+1 transitions, last is the fallback
-scripts/plain-config.sh step switch --workflow $WF --prompts prompts.txt \
-  --transitions "$BUG,$FEATURE,$TRIAGE"
+## Return the outcome
 
-# 4. publish
-scripts/plain-config.sh workflow publish --workflow $WF --start $SWITCH
+Return **built/reused/updated**, with actual IDs and behavior, **verified**, with actual test evidence, and
+**pending**, with the specific human task or failed build step. Distinguish configuration from an inbound
+channel being connected and from Sidekick tools being available.
 
-scripts/plain-config.sh workflow list
-scripts/plain-config.sh workflow unpublish $WF
-```
-
-### Saved views and knowledge
-
-```bash
-scripts/plain-config.sh view create --name "Urgent billing" --statuses TODO \
-  --priorities 0,1 --labels lt_01BILLING...
-scripts/plain-config.sh knowledge add --url https://acme.com/sitemap.xml
-scripts/plain-config.sh knowledge add --url https://status.acme.com --page
-```
-
-### Prove it works
-
-```bash
-scripts/plain-config.sh test thread --customer c_01ABC... --title "Export returns 500"
-scripts/plain-config.sh workflow runs $WF     # which branch the AI matched
-scripts/plain-config.sh thread state th_01ABC...   # what actually landed
-```
-
-`workflow runs` is the tuning loop: reword a prompt, re-run a thread, check the matched
-index. Do it once in front of the customer so they can maintain it themselves.
-
-## Environment variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `PLAIN_API_KEY` | Yes | Your Plain API key |
-| `PLAIN_API_URL` | No | API endpoint (default: `https://core-api.uk.plain.com/graphql/v1`) |
-
-## Output format
-
-Every command returns raw JSON. **Always check `error` before assuming success:**
-
-```bash
-scripts/plain-config.sh label create --name Billing | jq '.data.createLabelType.error'
-```
-
-`error.fields` names the exact field at fault and is usually enough to fix and retry.
-For anything that matters, verify the end state rather than the step status — some
-operations report success while doing nothing.
-
-## Look it up — don't recall it
-
-**This skill deliberately doesn't carry facts about Plain.** Product facts go stale; Plain's docs don't.
-Anything specific — a field name, an enum value, a permission, what an importer covers, whether something
-is possible at all — comes from the docs at the moment you need it:
-
-- `https://www.plain.com/docs/product/what-is-plain.md` — what Plain is, for anything conceptual
-- `https://www.plain.com/docs/llms.txt` — the full docs index (~1,000 pages, every one has a `.md`)
-- `https://www.plain.com/docs/graphql-reference/mutations/<name>.md` (or `/queries/<name>.md`) — a
-  specific operation's arguments and the permission it needs
-- `https://core-api.uk.plain.com/graphql/v1/schema.graphql` — exact input shapes and enum values
-
-**If a customer asks you something about Plain, answer from the docs, not from memory** — and if you
-can't confirm something either way, say so instead of guessing. Never tell someone Plain can't do
-something just because you couldn't find it; that's how people end up making decisions on bad
-information. Look, then answer.
-
-Read what you fetch silently — don't narrate the lookup or paste the docs back at them.
-
-**There's a companion skill for working with support data** — the Plain Support Skill
-(`npx skills add team-plain/plain-support`) reads customers, threads and timelines and drafts help-centre
-content. This one configures the workspace. If someone asks for something that's really the other job —
-"summarise this customer's history", "what are our open threads" — point them there rather than
-improvising.
-
-## Endpoint and auth
-
-`POST https://core-api.uk.plain.com/graphql/v1` with
-`Authorization: Bearer $PLAIN_API_KEY` and `Content-Type: application/json`.
-
-**Never read, print, echo or log the key's value.** Reference the environment variable. If the caller
-hasn't set one, ask them to — don't accept a pasted key in the conversation. See the onboarding skill's
-key-handling section for the exact instructions to give.
-
-Before building anything: run `myWorkspace` and `myPermissions`. Confirm you're pointed at the workspace
-they meant (read the name back to them — this is the last moment to catch a production workspace someone
-thought was a sandbox), and check the scopes you hold against what the config needs.
-
----
-
-## The config spec — your input contract
-
-Whatever calls you should hand you a spec in this shape. Anything omitted simply isn't built. If you were
-handed something looser (prose, a half-finished list), normalise it into this shape and **read it back for
-confirmation before executing** — that read-back is the last checkpoint before real objects exist.
-
-```yaml
-workspace: "Acme"                    # for reference only; you can't rename via this flow
-
-labels:                              # → createLabelType
-  - name: Billing
-    icon: credit-card                # slug, NOT emoji
-    color: "#22C55E"
-    externalId: billing
-    excludedFromPlainAi: true        # default TRUE — keep your workflow authoritative
-
-tiers:                               # → createTier, then createServiceLevelAgreement per SLA
-  - name: Enterprise
-    externalId: enterprise
-    color: "#5B5FEF"
-    defaultThreadPriority: 1         # 0=urgent 1=high 2=normal 3=low
-    isDefault: false                 # at most one tier true
-    slas:
-      - kind: first_response         # first_response | next_response — SEPARATE RECORDS, never both
-        minutes: 60
-        priorities: [0, 1]
-        businessHoursOnly: true
-        warnBeforeMinutes: 15        # required; breachActions can't be empty
-
-businessHours:                       # → syncBusinessHoursSlots (replaces the whole set)
-  timezone: Europe/London
-  slots:
-    - { weekday: MONDAY, opensAt: "09:00", closesAt: "17:30" }
-
-threadFields:                        # → createThreadFieldSchema
-  - label: Resolution reason
-    key: resolution_reason           # ^[a-z0-9_]+$, immutable
-    type: enum                       # map to Plain's field types — check the schema for current values
-    enumValues: [fixed, wontfix, duplicate, user_error]
-    required: false
-    aiAutoFill: true
-    dependsOnLabels: []              # label names from `labels` above
-
-tenantFields:                        # → upsertTenantFieldSchema
-  - externalFieldId: arr
-    label: ARR
-    type: number                     # map to Plain's field types — check the schema for current values
-
-escalationPaths:                     # → createEscalationPath
-  - name: Billing escalation
-    steps:
-      - { type: user, user: "jane@acme.com" }     # resolve emails to real user IDs first
-      - { type: label, label: Billing }
-
-triage:                              # ONE workflow. See reference §8e before changing this shape.
-  trigger: thread_created            # confirm valid trigger types in the workflow docs
-  cron: null                         # only when trigger: schedule
-  preFilters: []                     # deterministic conditions first — cheap and instant
-  classify:                          # else_if branches, evaluated IN ORDER, first match wins
-    - prompt: "Match if the customer reports a security vulnerability, exploit or data exposure — for example XSS, SQL injection or leaked credentials. Don't match for general questions about security features."
-      then:
-        label: Security
-        priority: 0
-        assignTo: "security@acme.com"     # resolve to a human user id
-    - prompt: "Match if the customer reports that existing functionality is broken, erroring or timing out — for example a 500 error or a failed export. Don't match for feature requests."
-      then:
-        label: Bug
-        priority: 1
-  fallbackLabel: Needs triage        # never leave this null
-
-snippets:                            # → createSnippet (saved replies / macros)
-  - name: "Card declined — first response"
-    text: "..."                      # VERBATIM. Never paraphrase or tidy saved-reply text.
-
-savedViews:                          # → createSavedThreadsView
-  - name: Urgent billing
-    icon: fire                       # slug, not emoji
-    color: "#EF4444"
-    statuses: [TODO]
-    priorities: [0, 1]
-    labels: [Billing]
-
-helpCenter:                          # → createHelpCenter (+ groups + articles)
-  publicName: Acme Help Center
-  internalName: acme-help-center
-  subdomain: acme                    # globally unique
-  type: PUBLIC                       # PUBLIC | PRIVATE | INTERNAL
-  chatEnabled: true
-  ariEnabled: true
-  migrateFrom: "https://docs.acme.com/sitemap.xml"   # fetch real pages; never invent article text
-
-knowledgeSources:                    # → createKnowledgeSource
-  - { url: "https://acme.com/sitemap.xml", type: SITEMAP }
-
-sidekick:
-  customPrompt: "Always mention the 30-day refund policy."
-  customSkills:
-    - { displayName: Check subscription, description: "...", instructions: "..." }
-  mcpServers: []                     # OAuth ones need a human click — report, don't promise
-
-webhooks:                            # → createWebhookTarget
-  - url: "https://acme.com/plain-webhook"
-    events: [...]                    # get valid values from the subscriptionEventTypes query
-
-tenants:                             # → upsertTenant + upsertTenantField
-  - { name: Acme Inc, externalId: acme-inc, fields: { arr: 48000 }, tier: enterprise }
-
-needsHumanClick:                     # things you CANNOT do — carry into the report
-  invites: [{ email: jane@acme.com, role: SUPPORT }]
-  channels: [email, slack]
-  teams: [Fraud, Billing]            # if the workspace has no Teams yet — see below
-```
-
----
-
-## Execution order
-
-Dependencies are real — out of order means failures or orphaned config.
-
-1. **Tiers** → 2. **SLAs** (need `tierId`) → 3. **Business hours** → 4. **Labels** → 5. **Tenant field
-schemas** → 6. **Thread field schemas** (may reference labels) → 7. **Escalation paths** (reference
-labels + users) → 8. **Triage workflow** (needs label, user and tier IDs to exist) → 9. **Saved views** →
-10. **Help center** → groups → articles → 11. **Knowledge sources** → 12. **Sidekick** → 13. **Webhooks**
-→ 14. **Tenants + field values**.
-
-Keep a running map of `name → real ID` as you go. Everything downstream references IDs, and workflow step
-payloads embed them — a name-based payload silently applies nothing.
-
-## How to execute
-
-- **Resolve identities first.** Fetch `users(first: N) { edges { node { id publicName } } }` and map any
-  emails in the spec to real user IDs. If the config routes to teams, resolve those too via the `teams`
-  query — assignment payloads embed real IDs, and a name where an ID belongs is often accepted and then
-  silently does nothing. **There is no verified team-creation
-  mutation**, so if a team in the spec doesn't exist, don't invent one: ask them to create it in
-  Settings → Teams now (it takes seconds and unblocks routing), or route to a named person instead and
-  put the team in `needsHumanClick`. Say which you're doing.
-- **Check how Plain models on-call rotation before promising it** — it's one of the most common requests
-  and the answer isn't obvious. Look at what assignment targets exist (teams, escalation paths, individual
-  users), then offer the real options and let them pick rather than picking silently. `assign_to_user` with a machine user id returns SUCCESS and
-  If an email doesn't match a workspace member, don't guess — move that assignment into
-  `needsHumanClick` and say so.
-- **One thing at a time, narrated.** Say what you're creating, create it, confirm with the real ID. Group
-  only trivially-related items (a batch of labels). Never fire ten mutations and report once.
-- **Check `error` on every mutation** before treating it as success — `error { message code fields { field message } }`. The
-  `fields` array names exactly what's wrong and is usually enough to fix and retry immediately.
-- **On failure:** say what failed, in plain language, with the real message. Then either fix and retry
-  (validation errors usually tell you the fix), skip it and record it for the report, or ask — but never
-  silently swallow it and never loop.
-- **Stop and confirm before anything destructive or public**, even if they've told you to stop asking:
-  - `syncBusinessHoursSlots` **replaces the entire slot set**. Read the current slots first; if any exist
-    and differ from the spec, show the difference and get an explicit yes. This is the one operation that
-    can quietly destroy existing configuration.
-  - A help centre with `type: PUBLIC` puts articles **on the public internet**. Read back the article
-    count and the URL and get a yes *before* the first `upsertHelpCenterArticle`, not after the last one.
-  - Unpublishing a live workflow to restructure it stops triage running until you republish. Say so.
-- **Re-running is not safe, and say so if they ask.** `createLabelType`, `createTier`,
-  `createServiceLevelAgreement` and `createWorkflow` all create rather than upsert, so a second run
-  duplicates them — and two published workflows on the same trigger both fire with no ordering guarantee.
-  Tenants and tenant/thread field schemas are upserts or key-collide safely. If something needs changing,
-  modify it; don't rebuild.
-- **Verify end state, not step status.** Some operations report success while doing nothing. After the
-  triage workflow is published, create one test thread and read
-  `workflowExecutions → stepExecutions[].output.matchedConditionIndex` to prove the branch fired and the
-  label, priority and assignment actually landed on the thread.
-
-## Building the triage workflow
-
-The single most error-prone part. Full detail in reference §8, but the shape:
-
-1. `createWorkflow` with the JSON trigger — this creates an **inactive draft**.
-2. Create the **terminal action steps first** (leaf-first), because `transitions` needs real step IDs.
-   Chain each branch's actions: label, then priority, then assignment.
-3. Create the **`else_if` classify step** with one prompt per branch and
-   `transitions: [branch1, branch2, …, fallback]` — N conditions, N+1 transitions.
-4. Any deterministic pre-filters go *above* the classify step, pointing at it on the true branch.
-5. `updateWorkflow { startStepId, isPublished: true }` — until you do this it never runs.
-
-**Before creating a new workflow, audit what's already published:**
-`workflows(first: 20) { edges { node { id name publishedAt { iso8601 } } } }`. Multiple published
-workflows on one trigger all fire with no ordering guarantee — the classic symptom is every thread getting
-an unexpected label. If a conflicting one exists, tell the caller and agree whether to unpublish it rather
-than stacking another on top.
-
-To modify an existing published workflow: unpublish (`isPublished: false`), restructure, republish.
-`startStepId` can't be cleared while published.
-
-## What needs a human, and how to be sure
-
-Some things genuinely require a person in a browser rather than an API key — OAuth consent for channels
-and connectors, DNS verification, and operations that need a real logged-in user rather than a machine
-one. When you hit one, name the exact settings page and, if there's time left, walk them through it
-rather than filing it in a report.
-
-**Be careful how you state a limitation.** If a call is refused, quote the actual error. If you simply
-can't find a capability, check the docs index and the operation's doc page before concluding anything —
-and if you still can't confirm it either way, say *"I couldn't confirm this, it's worth checking with
-Plain"* rather than telling a customer their product can't do something. A wrong "that's impossible"
-travels further than a wrong field name: people cancel contracts and abandon migrations over it.
-
-One thing worth saying plainly at the end regardless: **support isn't live until an inbound channel is
-connected.** A fully configured workspace with no channel receives nothing.
-
-## Output
-
-Return two things — to whatever called you, or directly to the person if you were loaded standalone. Used
-directly, present it as a short readable summary in the conversation (a table of what exists now with its
-IDs, then the human to-do list); don't produce a machine-readable blob for a person, and don't build an
-HTML report unless they ask for one.
-
-
-1. **Built** — every object created, with its real ID, grouped by area. Machine-readable enough that a
-   caller can render it (the onboarding skill turns this into an HTML report).
-2. **Needs a human** — invites, channel OAuth, notification preferences, widget snippet, plus anything
-   that failed and why. Name the exact Settings page for each.
-
-Then remind them to delete the setup machine user or narrow its key — it can create tiers, invite-adjacent
-config and publish public help center content.
+Onboarding renders the HTML handoff. Used directly, give a compact conversation summary unless the user
+requests a report. Used by insights, return the change result so the same conversation/report can show it.
+Remind the person to revoke/narrow the temporary setup key and delete its credential file when finished.

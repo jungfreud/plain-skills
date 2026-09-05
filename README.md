@@ -1,167 +1,146 @@
 <h1 align="center">Plain skills</h1>
 
-<p align="center">
-  Configure and improve your <a href="https://www.plain.com">Plain</a> workspace by talking to your coding agent.
-</p>
+<p align="center">Set up and improve your <a href="https://www.plain.com">Plain</a> workspace with your coding agent.</p>
 
-<p align="center">
-  <a href="https://www.plain.com">plain.com</a> ·
-  <a href="https://www.plain.com/docs">Docs</a> ·
-  <a href="https://www.plain.com/docs/graphql/introduction">GraphQL API</a>
-</p>
+Start with your company website, docs, an existing setup export, or a few answers. Your agent proposes a
+useful setup, builds it with Plain's API, and shows you what happens when a ticket arrives.
 
----
+## What you get
 
-## What this is
+The default setup gives you:
 
-[Plain](https://www.plain.com) is a customer support platform for software companies. Everything in it —
-tiers, SLAs, labels, routing, the AI agents, the help center — is a first-class object in a GraphQL API
-rather than something buried in a settings screen. Anything you can do in the app, you can do over the API.
+- **AI labels and routing:** one inbound workflow classifies tickets, applies labels and priority, and
+  assigns the right team or person, with a visible fallback for anything it cannot classify.
+- **Sidekick investigations:** each branch starts a Sidekick session with a skill tailored to how your
+  support engineers work. For example: check related GitHub issues, look for knowledge gaps, inspect
+  recent incident signals in Datadog or Sentry, and prepare an engineering handoff.
+- **Your knowledge:** connect maintained docs as knowledge sources. If you want Ari to respond to routine
+  questions, configure the relevant assignment and response mode as part of the setup.
+- **A clear handoff:** an HTML summary of what was built and tested, and the remaining connections to
+  complete in Plain's UI. Skills can be prepared for MCPs you plan to connect later.
 
-That's powerful, and it's also a lot to take in. The schema is large, and if you point an agent at it cold
-it has to work out which handful of operations matter, what order they depend on, and which inputs the API
-validates more strictly than the schema suggests.
+The agent asks about your real categories, ownership, tools and desired actions. It does not require a
+complete support strategy before starting. Tiers, SLAs, fields, saved views and other configuration are
+available when useful, or as later changes.
 
-**These skills are that shortcut.** Each one is a single Markdown file that teaches an agent how to use
-Plain's API for one specific outcome — configure a workspace, or pull insights out of one — so you get it
-right first time and finish in one sitting.
+Connecting an integration does not grant every action: existing Plain/Sidekick approval rules still
+apply. The setup distinguishes configured, tested and live behavior, so a pending channel connection or
+an issue-creation approval is visible rather than hidden behind “done.”
 
-## How these fit with the Plain Support Skill
+## The skills
 
-Plain's [Support Skill](https://www.plain.com/docs/agents/agent-skill) covers working *with* your support
-data — reading customers, threads and timelines, drafting help-centre content:
+| Skill | Use it for |
+| --- | --- |
+| [plain-onboarding](skills/plain-onboarding/SKILL.md) | A short guided setup: research your company, propose a design, and call configuration to build it. |
+| [plain-configuration](skills/plain-configuration/SKILL.md) | Build or change a workspace directly, including workspace Sidekick skills and the workflows that invoke them. |
+| [plain-insights](skills/plain-insights/SKILL.md) | Review a period of support activity, see evidence-backed suggestions, and optionally apply a chosen improvement in the same conversation. |
+
+There are two kinds of skill here: these files run in **your coding agent**; the investigation routines
+they create run in **Sidekick inside Plain**.
+
+Plain's [Support Skill](https://www.plain.com/docs/agents/agent-skill) is a companion for reading customers,
+threads and timelines and working with support content:
 
 ```bash
 npx skills add team-plain/plain-support
 ```
 
-These cover the other half: **setting your workspace up and changing how it behaves.** Same
-`PLAIN_API_KEY`, same install path, same conventions — install either or both depending on whether you're
-investigating support or configuring it.
-
-## Who it's for
-
-- **New to Plain** and you'd rather your agent set the workspace up than click through settings.
-- **Already on Plain** and you want to change how triage, routing or SLAs work without hunting through
-  docs.
-- **A developer** integrating with Plain's API, agent or not. The reference is a working method for the
-  API — where to look things up and how to avoid the common traps — and stands on its own.
-
-You don't need to know the GraphQL API, and you don't need to install anything.
-
-## The skills
-
-Each is standalone. Load whichever matches what you're doing — or let the onboarding skill call the
-configuration skill for you.
-
-| Skill | Use it when | What it does |
-| --- | --- | --- |
-| **[plain-configuration](./skills/plain-configuration/SKILL.md)** | You know what you want your workspace to do | Teaches your agent to build it: tiers, SLAs, business hours, labels, custom fields, AI triage and routing workflows, saved views, help center, knowledge sources, Sidekick, webhooks. Applies everything in the right order, verifies each step, and tells you what still needs a click in the app. |
-| **[plain-onboarding](./skills/plain-onboarding/SKILL.md)** | You're starting from scratch and want to be walked through it | A guided conversation about how your support actually works today. It designs the workspace with you, explains what each choice buys you, then hands the result to **plain-configuration** to build. |
-| **[plain-insights](./skills/plain-insights/SKILL.md)** | You want to know what to improve | Read-only. Pulls CSAT, first response and resolution times, SLA compliance and AI-vs-human handling — by label, assignee, tier and channel — into an HTML dashboard, then turns each finding into a prompt you can paste to fix it. |
-
-The modularity is the point. **plain-configuration** is the engine and works entirely on its own —
-describe what you want in a sentence and your agent can one-shot it. **plain-onboarding** is a
-conversation layer that produces a configuration spec and calls the engine with it. **plain-insights**
-looks at what's actually happening and hands you prompts that call the engine too.
-
-```
-                 plain-onboarding ─┐
-   (guided conversation)           │
-                                   ├──▶  plain-configuration  ──▶  your workspace
-                 plain-insights ───┘         (the engine)
-   (find what to improve)
-```
-
 ## Get started
 
-Paste this into any agent with a terminal — Claude Code, Codex, Cursor:
+Use Codex, Claude Code, or another coding agent with a terminal. The command-line helper needs `curl` and
+`jq`; it does not require you to know GraphQL. You can design your workspace before supplying an API key.
 
-**Set up a new workspace, guided:**
+Install the bundle through [skills.sh](https://skills.sh):
 
-```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-onboarding/SKILL.md
-and follow exactly what it outputs. I'm new to Plain — walk me through it and set up my workspace.
-```
-
-**Already know what you want:**
-
-```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-configuration/SKILL.md
-and follow it. I want AI triage that labels incoming threads as Bug, Billing or Feature Request, routes
-bugs to engineering as high priority, and a 1-hour first response SLA for enterprise customers.
-```
-
-**Find out what to improve:**
-
-```
-Run curl -s https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-insights/SKILL.md
-and follow it. Show me where our support is slowest and what I should change.
-```
-
-It's a `curl` rather than "read this URL" because not every agent has a web-fetch tool, but they can all
-run a shell command.
-
-Prefer a package manager? Via [skills.sh](https://www.skills.sh):
-
-```
+```bash
 npx skills add jungfreud/plain-skills
 ```
 
-## Your API key
+Then ask:
 
-You'll need a Plain workspace and an API key: **Settings → Machine Users → Add API key**. The Admin preset
-is the simplest choice for a one-off setup key; your agent can also work out the narrower set of
-permissions a given configuration actually needs, since every operation's doc page states its own.
+> Use plain-onboarding to set up my Plain workspace. Our website is https://example.com.
+> Propose useful labels, team routing and a Sidekick investigation workflow.
 
-**Don't paste the key into the chat.** Put it in a file only you can read, and your agent will load it per
-command:
+Or paste this into your coding agent without installing first:
 
-```bash
-printf 'export PLAIN_API_KEY="plainApiKey_xxx"\n' > ~/.plain-setup.env && chmod 600 ~/.plain-setup.env
+```text
+Fetch https://raw.githubusercontent.com/jungfreud/plain-skills/main/skills/plain-onboarding/SKILL.md
+with curl -fsSL and follow it. Set up my Plain workspace using my company website and a few questions.
+Download supporting files as the skill instructs.
 ```
 
-Then just tell your agent it's set. The skills reference the variable and never read or print its value,
-so the secret stays out of your conversation history. Like the Support Skill, these assume `curl` and
-`jq` are available. Don't append it to `~/.zshrc` — that writes a
-temporary credential into a file people commit to dotfiles repos.
+The skills resolve local siblings when installed. When fetched alone, they explain how to download the
+configuration helper and references from the same repository and version.
 
-When you're done, delete the machine user (and the env file). A setup key can change your configuration
-and publish public content.
+For a direct change:
 
-**plain-insights needs only read access**, which is a much safer thing to hand an agent — it can't change
-anything.
+> Use plain-configuration. Add a Bug branch to our inbound workflow, route it to Engineering, and have
+> Sidekick investigate related GitHub issues and Sentry errors before preparing a Linear issue.
 
-## The reference
+For an existing workspace:
 
-[`skills/plain-configuration/references/API.md`](./skills/plain-configuration/references/API.md) is a method guide, not a fact sheet.
-It deliberately contains almost no specifics about Plain — those live in
-[Plain's docs](https://www.plain.com/docs), which are always current, and the skills are written to look
-them up at the moment they're needed rather than recall them.
+> Use plain-insights. Review the last 30 days and give me a dashboard with suggestions for better
+> labeling, routing, and Sidekick investigations. Let me choose which changes to apply.
 
-What the reference does give you: where the authoritative sources are and how to query them, the order
-things depend on each other, how to handle errors and verify that a change actually landed, and the
-architecture of a good triage setup — one workflow on thread creation, cheap deterministic checks before
-expensive AI ones, a single multi-branch classifier, always a fallback, always tested against real
-threads.
+## API access
 
-That split is deliberate. A skill that memorises an API is wrong within a release; a skill that knows
-where to look stays right.
+Create a temporary setup key in **Settings → Machine Users** when the agent is ready to build. The agent
+will identify the permissions needed for the agreed setup. An Admin preset is an option for a temporary
+key if you choose that scope; it is not required for every task. Insights needs read access until you
+choose to apply a change.
 
-## Verify it still holds
+**Do not paste a key into chat.** The configuration skill shows how to enter it privately in your own
+terminal and make it available to the agent without printing it or saving it in your shell profile.
+If a remote agent cannot see the terminal's environment or file, use that agent's supported secret input.
+When setup is finished, revoke the temporary key and delete its local credential file.
 
-`tests/smoke.sh` is a read-only check that the API and the documentation endpoints the skills rely on are
-reachable and behaving.
+MCP/integration authentication and channel connections happen in Plain's UI. Credentials for GitHub,
+Datadog or Sentry do not belong in generated Sidekick instructions or the HTML report.
+
+## Existing help desks
+
+An export can inform the new design. These skills build labels, teams, workflows and investigation skills
+in Plain; they do not run a historical-ticket migration. Handle migration separately using the relevant
+[Plain importer documentation](https://www.plain.com/docs/product/integrations). Check that provider's
+current coverage instead of assuming it transfers workspace configuration.
+
+## How the build works
+
+The configuration skill uses an explicit design, checks existing workspace state, creates dependencies
+before workflows, and verifies actual results. Its CLI wraps common operations. For less common changes,
+it reads the current [Plain docs](https://www.plain.com/docs/llms.txt) and schema before constructing a call.
+
+Some workflow action payloads are JSON strings whose full shape is not described in the GraphQL schema.
+For these, the skill reads a live workflow or gallery template, remaps IDs, and validates the resulting
+step. It never guesses a Sidekick action payload. A missing API contract is reported as an incomplete
+build step, not as a successful integration.
+
+If a build is interrupted, the agent uses its local execution record and the live workspace to resume
+only what remains. This is not an automatic transactional installer; never blindly rerun create commands.
+Insights reads fresh data each time and keeps no ongoing decision memory.
+
+## Internal review and testing
+
+This repository is the review copy before adoption into Plain's official distribution. It does not
+imply that this version has passed engineering's live-workspace tests.
+
+Run the offline CLI checks:
 
 ```bash
-PLAIN_API_KEY=plainApiKey_xxx ./tests/smoke.sh
+python3 tests/cli_contract.py
 ```
 
-## Found something wrong?
+With a read-capable key already supplied securely, run:
 
-APIs move. If a skill hits something that doesn't match, please
-[open an issue](https://github.com/jungfreud/plain-skills/issues) with the error the API returned — that's
-the most useful contribution there is.
+```bash
+./tests/smoke.sh
+```
 
-For questions about Plain itself, see the [docs](https://www.plain.com/docs) or
-[get in touch](https://www.plain.com).
+The smoke test checks documentation reachability and API reads. It does not create configuration or
+prove that the entire customer journey works. Use [the review scenarios](tests/SCENARIOS.md) to check the
+full setup in a disposable workspace with Codex and Claude Code, including the minimum model you intend
+to support. Live mutations and model evaluations are separate from the offline checks.
+
+To move the distribution later, `./scripts/retarget.sh team-plain/REPOSITORY main` rewrites this bundle's
+own links and install commands; it preserves links to other repositories. Review the diff before
+publishing and verify installation from the final location.

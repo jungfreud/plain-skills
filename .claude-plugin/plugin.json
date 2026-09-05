@@ -1,7 +1,7 @@
 {
   "name": "plain-workspace-setup",
-  "description": "Set up and improve a Plain workspace. Design a support configuration through conversation, apply it over the GraphQL API, and audit an existing workspace for what to improve.",
-  "version": "0.1.0",
+  "description": "Set up and improve a Plain workspace: AI labeling, team routing, tailored Sidekick investigations and knowledge sources, with a clear connection handoff.",
+  "version": "0.2.0",
   "author": {
     "name": "Plain"
   }
